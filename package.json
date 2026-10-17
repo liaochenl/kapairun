@@ -1,0 +1,12 @@
+{
+  "name": "truth-academy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "《真理学院》——数学主题收集养成抽卡 Demo",
+  "scripts": {
+    "test": "node --test test/engine.test.js",
+    "sim": "node test/sim.js",
+    "qa": "node test/browser.js",
+    "serve": "python3 -m http.server 8080"
+  }
+}

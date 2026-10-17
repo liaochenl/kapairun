@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17241f">
+  <title>真理学院 · 悖论裂缝</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2317241f'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='%23e7c46b' font-family='Georgia,serif'%3E%CE%A3%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="board">
+    <div class="board-inner">
+      <div id="app" aria-live="polite"></div>
+    </div>
+  </div>
+  <div id="overlay-root"></div>
+  <div id="toast-root" aria-live="assertive"></div>
+  <noscript><div class="noscript">《真理学院》需要启用 JavaScript 才能开课。</div></noscript>
+  <script>
+    window.__TA_ERRORS = [];
+    window.addEventListener('error', function (e) {
+      window.__TA_ERRORS.push(String(e.message || e.error || 'unknown'));
+      if (location.search.indexOf('debug') >= 0) {
+        var box = document.createElement('pre');
+        box.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9999;max-width:90vw;padding:8px;background:#3a1010;color:#ffb4a8;font-size:11px;white-space:pre-wrap;';
+        box.textContent = 'JS 错误：' + e.message;
+        document.body.appendChild(box);
+      }
+    });
+  </script>
+  <script src="js/rng.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/battle.js"></script>
+  <script src="js/meta.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
