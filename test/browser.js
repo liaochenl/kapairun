@@ -374,7 +374,9 @@ async function main() {
   await wait(300);
   await click('[data-action="mulligan-confirm"]');
   await wait(500);
-  console.log('mobile battle:', await evalJs('JSON.stringify({w:document.documentElement.clientWidth,hand:document.querySelectorAll(".hand-card").length,overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth})'));
+  const mobile = JSON.parse(await evalJs('JSON.stringify({w:document.documentElement.clientWidth,hand:document.querySelectorAll(".hand-card").length,overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth})'));
+  console.log('mobile battle:', JSON.stringify(mobile));
+  if (mobile.overflow) throw new Error('390px 移动端出现横向 overflow');
   await shot('mobile-battle');
   await evalJs('TA_UI.quitBattle()');
   await wait(200);

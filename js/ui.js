@@ -379,13 +379,18 @@
     }).join('');
 
     const rowCounts = { axiom: 0, reasoning: 0, theorem: 0 };
-    const typeCounts = { unit: 0, special: 0 };
+    const typeCounts = { unit: 0, special: 0, paradox: 0 };
     deck.cards.forEach(function (id) {
       const def = card(id);
       if (!def) return;
-      if (def.type === 'unit' && rowCounts[def.row] != null) rowCounts[def.row]++;
-      if (def.type === 'special') typeCounts.special++;
-      else typeCounts.unit++;
+      if (def.type === 'unit') {
+        if (rowCounts[def.row] != null) rowCounts[def.row]++;
+        typeCounts.unit++;
+      } else if (def.type === 'special') {
+        typeCounts.special++;
+      } else if (def.type === 'paradox') {
+        typeCounts.paradox++;
+      }
     });
 
     return '' +
@@ -420,6 +425,7 @@
       '        <div><dt>定理域</dt><dd>' + rowCounts.theorem + '</dd><span class="bar"><i style="width:' + (rowCounts.theorem / 25 * 100) + '%"></i></span></div>' +
       '        <div><dt>单位</dt><dd>' + typeCounts.unit + '</dd><span class="bar"><i style="width:' + (typeCounts.unit / 25 * 100) + '%"></i></span></div>' +
       '        <div><dt>策略</dt><dd>' + typeCounts.special + '</dd><span class="bar"><i style="width:' + (typeCounts.special / 25 * 100) + '%"></i></span></div>' +
+      '        <div><dt>悖论</dt><dd>' + typeCounts.paradox + '</dd><span class="bar"><i style="width:' + (typeCounts.paradox / 25 * 100) + '%"></i></span></div>' +
       '      </dl>' +
       (check.ok ? '<p class="deck-valid">牌组合法，可以开课。</p>'
         : '<ul class="deck-errors">' + check.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>') +
@@ -918,7 +924,7 @@
     });
     const chosen = app.newDeckFaction || (activeDeck() ? activeDeck().faction : 'geometry');
     return '' +
-      '<div class="modal-head"><p class="modal-eyebrow">最多 3 套牌</p><h2>新建牌组</h2></div>' +
+      '<div class="modal-head"><p class="modal-eyebrow">最多 3 套自建牌组</p><h2>新建牌组</h2></div>' +
       '<label class="field-label">牌组名<input id="new-deck-name" class="text-input" maxlength="16" value="新牌组"></label>' +
       '<p class="field-label">主阵营</p>' +
       '<div class="faction-pick">' + factions.map(function (f) {
