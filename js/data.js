@@ -272,9 +272,11 @@
         'coordinate': 3,
         'number-line': 3,
         'descartes': 1,
-        'geometric-proof': 2,
-        'parallel': 2,
-        'euclid-apprentice': 2
+        'geometric-proof': 1,
+        'parallel': 1,
+        'euclid-apprentice': 2,
+        'pythagoras-disciple': 1,
+        'pythagorean-theorem': 1
       })
     },
     '1-4': {
