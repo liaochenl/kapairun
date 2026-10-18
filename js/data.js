@@ -216,15 +216,14 @@
     'euclid-apprentice': 3,
     'ruler-compass': 3,
     'proportion': 2,
-    'triangle': 2,
-    'parallel': 2,
+    'triangle': 3,
+    'parallel': 3,
     'geometric-proof': 2,
     'pythagoras-disciple': 2,
     'pythagorean-theorem': 1,
     'number-line': 2,
     'coordinate': 1,
     'conic': 1,
-    'counterexample': 2,
     'withdraw': 1,
     'clarify': 1
   };
@@ -444,7 +443,7 @@
       lesson: '反例会在对方战场留下 1 点单位，但你能立刻抽一张牌。',
       tip: '卡差比 1 点论证力更值钱，尤其是小局之间不自动抽牌。',
       ai: '1-5', bossRule: null,
-      reward: { type: 'choice', cards: ['citation', 'infinity', 'limit'] }
+      reward: { type: 'choice', cards: ['counterexample', 'citation', 'limit'] }
     },
     {
       id: '1-6', index: 6, name: '悖论走廊', subtitle: '悖论与公理澄清',
@@ -465,7 +464,7 @@
       lesson: '反证法摧毁对方论证力最高的非巨匠单位。',
       tip: '把巨匠留在场上，可以挡住对手的反证法。',
       ai: '1-8', bossRule: null,
-      reward: { type: 'choice', cards: ['gauss', 'noether', 'pythagoras'] }
+      reward: { type: 'choice', cards: ['gauss', 'noether', 'infinity'] }
     },
     {
       id: '1-9', index: 9, name: '综合辩场', subtitle: '联动与共识',

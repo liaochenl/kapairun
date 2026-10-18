@@ -68,6 +68,8 @@
       });
     }
     p.deck = deck;
+    // TODO(第二阶段): 若卡牌 ID 迁移导致 deck < 25，可从 collection 自动补合法基础牌；
+    // 但不能在正常编辑（临时少于 25 张）时覆盖玩家选择，需要额外标记“存档损坏”。
 
     if (!p.clearedStages || typeof p.clearedStages !== 'object') p.clearedStages = {};
     if (!p.claimedRewards || typeof p.claimedRewards !== 'object') p.claimedRewards = {};

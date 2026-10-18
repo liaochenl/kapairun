@@ -90,13 +90,15 @@
   }
 
   function capacity(state, side, actions) {
-    const bestPerCard = {};
+    const bestPerHand = {};
     (actions || candidateActions(state, side)).forEach(function (a) {
       if (a.gain <= 0) return;
-      if (!bestPerCard[a.cardId] || a.gain > bestPerCard[a.cardId]) bestPerCard[a.cardId] = a.gain;
+      // 按手牌位置统计，不按 cardId 去重：三张三角形就是三份追分能力。
+      const key = a.index;
+      if (!bestPerHand[key] || a.gain > bestPerHand[key]) bestPerHand[key] = a.gain;
     });
-    return Object.keys(bestPerCard).reduce(function (sum, id) {
-      return sum + bestPerCard[id];
+    return Object.keys(bestPerHand).reduce(function (sum, key) {
+      return sum + bestPerHand[key];
     }, 0);
   }
 
@@ -111,12 +113,13 @@
   }
 
   function bestGains(actions) {
-    const bestPerCard = {};
+    const bestPerHand = {};
     actions.forEach(function (a) {
       if (a.gain <= 0) return;
-      if (!bestPerCard[a.cardId] || a.gain > bestPerCard[a.cardId]) bestPerCard[a.cardId] = a.gain;
+      const key = a.index;
+      if (!bestPerHand[key] || a.gain > bestPerHand[key]) bestPerHand[key] = a.gain;
     });
-    return Object.keys(bestPerCard).map(function (id) { return bestPerCard[id]; });
+    return Object.keys(bestPerHand).map(function (key) { return bestPerHand[key]; });
   }
 
   function chooseAction(state, side) {

@@ -77,6 +77,7 @@
   function createMatch(options) {
     const opts = options || {};
     const seed = (Number(opts.seed) >>> 0) || 0x9e3779b9;
+    const forcedFirst = opts.first === 'ai' || opts.first === 'player' ? opts.first : null;
     const state = {
       version: DATA.VERSION,
       stageId: opts.stageId || null,
@@ -84,8 +85,8 @@
       round: 1,
       current: null,
       phase: 'mulligan',
-      firstSide: opts.first === 'ai' ? 'ai' : 'player',
-      lastStarter: opts.first === 'ai' ? 'ai' : 'player',
+      firstSide: forcedFirst || 'player',
+      lastStarter: forcedFirst || 'player',
       uid: 1,
       rngState: seed,
       effects: { axiom: null, reasoning: null, theorem: null },
@@ -100,6 +101,12 @@
       shuffle(state, state[side].deck);
       draw(state, side, HAND_SIZE);
     });
+    if (!forcedFirst) {
+      const first = nextRandom(state) < 0.5 ? 'player' : 'ai';
+      state.firstSide = first;
+      state.lastStarter = first;
+      addLog(state, 'system', 1, '掷硬币：' + (first === 'player' ? '你先手' : '对手先手') + '。');
+    }
     addLog(state, 'system', 1, '对局开始：双方各 2 枚真理印记，开局抽 10 张。');
     if (opts.skipMulligan) beginPlay(state);
     return state;

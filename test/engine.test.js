@@ -12,7 +12,8 @@ function newMatch(opts) {
   const o = Object.assign({
     playerDeck: DATA.STARTER_DECK.slice(),
     aiDeck: DATA.STARTER_DECK.slice(),
-    seed: 20261018
+    seed: 20261018,
+    first: 'player'
   }, opts || {});
   return BATTLE.createMatch(o);
 }
@@ -22,7 +23,8 @@ function playState(playerHand, aiHand) {
     playerDeck: (playerHand || []).slice(),
     aiDeck: (aiHand || []).slice(),
     seed: 7,
-    skipMulligan: true
+    skipMulligan: true,
+    first: 'player'
   });
   state.player.hand = (playerHand || []).slice();
   state.ai.hand = (aiHand || []).slice();
@@ -191,6 +193,7 @@ test('Boss 自指在第 2 小局开始时自动施加罗素悖论', function () 
     aiDeck: DATA.AI_DECKS['1-10'].deck,
     seed: 5,
     skipMulligan: true,
+    first: 'player',
     bossRule: 'self-reference',
     stageId: '1-10'
   });
@@ -311,18 +314,34 @@ test('初始牌组恰好 25 张且合法', function () {
   assert.strictEqual(profile.deck.length, 25);
   const check = META.validateDeck(profile);
   assert.strictEqual(check.ok, true, check.errors.join('；'));
-  assert.strictEqual(new Set(profile.deck).size >= 10, true);
+  assert.strictEqual(new Set(profile.deck).size, 13);
+  assert.strictEqual(profile.deck.indexOf('counterexample'), -1);
+});
+
+test('按当前奖励表可以收齐全部 30 种卡', function () {
+  const profile = META.defaultProfile();
+  DATA.STAGES.forEach(function (stage) {
+    META.rewardOptions(profile, stage.id).slice().forEach(function (id) {
+      const res = META.claimReward(profile, stage.id, id);
+      assert.strictEqual(res.ok, true, stage.id + ' 领取 ' + id + ' 失败');
+    });
+  });
+  META.unlockParadoxes(profile);
+  const missing = DATA.CARDS.filter(function (c) {
+    return c.collectible && META.owned(profile, c.id) < 1;
+  }).map(function (c) { return c.id; });
+  assert.deepStrictEqual(missing, []);
 });
 
 test('三选一奖励可以重复领取剩余选项', function () {
   const profile = META.defaultProfile();
   let options = META.rewardOptions(profile, '1-5');
-  assert.deepStrictEqual(options, ['citation', 'infinity', 'limit']);
+  assert.deepStrictEqual(options, ['counterexample', 'citation', 'limit']);
   const first = META.claimReward(profile, '1-5', 'citation');
   assert.strictEqual(first.ok, true);
   options = META.rewardOptions(profile, '1-5');
-  assert.deepStrictEqual(options, ['infinity', 'limit']);
-  META.claimReward(profile, '1-5', 'infinity');
+  assert.deepStrictEqual(options, ['counterexample', 'limit']);
+  META.claimReward(profile, '1-5', 'counterexample');
   options = META.rewardOptions(profile, '1-5');
   assert.deepStrictEqual(options, ['limit']);
   META.claimReward(profile, '1-5', 'limit');
@@ -406,6 +425,35 @@ test('AI 落后太多且需要多张牌时主动让局', function () {
   const action = AI.chooseAction(state, 'ai');
   assert.strictEqual(action.type, 'pass');
   assert.strictEqual(action.reason, 'cannot-catch-up');
+});
+
+test('AI 追分能力按每张实体手牌统计，不合并同名卡', function () {
+  const state = playState([], []);
+  state.current = 'ai';
+  state.player.passed = true;
+  state.ai.hand = ['triangle', 'triangle', 'triangle'];
+  place(state, 'player', 'parallel'); /* 6 */
+  assert.strictEqual(AI.capacity(state, 'ai'), 12);
+  const action = AI.chooseAction(state, 'ai');
+  assert.strictEqual(action.type, 'play');
+});
+
+test('先手由种子随机决定，且同种子可复现', function () {
+  const make = function (seed) {
+    return BATTLE.createMatch({
+      playerDeck: DATA.STARTER_DECK.slice(),
+      aiDeck: DATA.STARTER_DECK.slice(),
+      seed: seed
+    });
+  };
+  const a = make(123456);
+  const b = make(123456);
+  assert.strictEqual(a.firstSide, b.firstSide);
+  assert.ok(a.firstSide === 'player' || a.firstSide === 'ai');
+  const sides = {};
+  for (let seed = 1; seed <= 60; seed++) sides[make(seed).firstSide] = true;
+  assert.strictEqual(sides.player, true);
+  assert.strictEqual(sides.ai, true);
 });
 
 test('AI 在必须赢下小局时会尝试追分', function () {

@@ -534,6 +534,7 @@
       '  <div><span class="mg-label">奖励</span><span class="mg-value">' + esc(rewardLabel(stage)) + '</span></div>' +
       '  <div><span class="mg-label">你的牌组</span><span class="mg-value ' + (deckCheck.ok ? '' : 'bad') + '">' + app.profile.deck.length + ' / 25</span></div>' +
       '  <div><span class="mg-label">真理印记</span><span class="mg-value">2 : 2</span></div>' +
+      '  <div><span class="mg-label">先手</span><span class="mg-value">掷硬币</span></div>' +
       '</div>' +
       '<p class="modal-tip">' + esc(stage.tip) + '</p>' +
       (deckCheck.ok ? '' : '<ul class="deck-errors">' + deckCheck.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>') +
@@ -564,6 +565,7 @@
       '  <h2>重抽最多 2 张</h2>' +
       '</div>' +
       '<p class="modal-lesson">把不想要的开局牌换回牌库。重抽只有这一次，之后整场比赛不会自动抽牌。</p>' +
+      '<p class="mulligan-first">' + (m.firstSide === 'player' ? '本局你先手' : '本局对手先手') + '</p>' +
       '<div class="mull-grid">' + cards + '</div>' +
       '<p class="modal-tip">已选择 ' + selected.length + ' / 2 张</p>' +
       '<div class="modal-actions">' +

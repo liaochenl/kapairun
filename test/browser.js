@@ -131,6 +131,16 @@ async function main() {
     return evalJs('JSON.stringify((function(){var a=TA_UI.app,m=a.match;return {screen:a.screen,modal:a.modal&&a.modal.type,phase:m&&m.phase,current:m&&m.current,round:m&&m.round,cleared:a.profile.clearedStages,collection:a.profile.collection,deckLen:a.profile.deck.length,deckHasPyth:a.profile.deck.indexOf("pythagoras")!==-1,hand:m&&m.player.hand.length,aiHand:m&&m.ai.hand.length,seals:m&&{p:m.player.seals,a:m.ai.seals},board:m&&{p:TA_BATTLE.calculateTotalScore(m,"player"),a:TA_BATTLE.calculateTotalScore(m,"ai")}};})())');
   }
 
+  async function waitForPlayerTurn(maxMs) {
+    const limit = Math.ceil((maxMs || 2500) / 80);
+    for (let i = 0; i < limit; i++) {
+      const snap = JSON.parse(await evalJs('JSON.stringify({cur:TA_UI.app.match&&TA_UI.app.match.current,phase:TA_UI.app.match&&TA_UI.app.match.phase})'));
+      if (!snap.phase || snap.phase !== 'play' || snap.cur === 'player') return snap;
+      await wait(80);
+    }
+    return null;
+  }
+
   await send('Runtime.enable');
   await send('Page.enable');
   await send('Log.enable');
@@ -161,9 +171,11 @@ async function main() {
   await click('.mull-card[data-index="0"]');
   await click('.mull-card[data-index="1"]');
   await wait(150);
-  await click('[data-action="mulligan-confirm"]');
-  await wait(450);
   await evalJs('TA_UI.app.aiDelay=40');
+  await click('[data-action="mulligan-confirm"]');
+  await wait(250);
+  await waitForPlayerTurn(2500);
+  console.log('first side:', await evalJs('TA_UI.app.match.firstSide'));
   console.log('after mulligan:', await appState());
   await shot('battle');
 
@@ -292,8 +304,10 @@ async function main() {
   await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 860, deviceScaleFactor: 1, mobile: false });
   await evalJs('TA_UI.beginBattle("1-10")');
   await wait(300);
+  await evalJs('TA_UI.app.aiDelay=40');
   await click('[data-action="mulligan-confirm"]');
-  await wait(400);
+  await wait(300);
+  await waitForPlayerTurn(2500);
   await evalJs('(function(){var a=TA_UI.app,m=a.match;a.aiDelay=40;m.ai.hand=[];m.ai.deck=[];m.player.board.axiom.push({uid:m.uid++,id:"euclid",row:"axiom"});TA_UI.render();return true;})()');
   await click('[data-action="pass"]');
   await wait(800);
