@@ -37,10 +37,10 @@ getShopPrice(cardId)
 ```
 
 - 6 槽位，每槽 `{ cardId, price, sold }`，写入 `profile.shop`。
-- 通关后免费自动刷新；手动刷新 20 金币。
+- 通关获得 1 次免费刷新（`freeRefreshes`，上限 3），不自动改变库存；无免费次数时刷新 20 金币。
 - 同 seed 可复现；刷新后存档，重载不重随机。
-- 商店池：`collectible && shop && 未达上限 && 章节已解锁`。
-- 首通固定/三选一奖励、悖论解锁牌、巨匠不进入随机池。
+- 商店池：`collectible && shop && 未达上限 && 章节已解锁 && 通关进度 >= shopUnlockIndex`。
+- 首通奖励在对应关卡通关后才进入商店；巨匠、悖论不进入随机池。
 - 价格：basic 35 / advanced 60 / special 80；`price` 可覆盖。
 - 购买：扣金币、`collection +1`、`discoveredCards`、`sold = true`。
 - 池不足 6 时留空槽，不复制已满卡。
@@ -60,7 +60,7 @@ getShopPrice(cardId)
   claimedRewards: {},
   unlockedFactions: { geometry: true, logic: false },
   unlockedChapters: { 1: true, 2: false },
-  shop: { inventory: [], seed: 0, refreshCount: 0 },
+  shop: { inventory: [], seed: 0, refreshCount: 0, freeRefreshes: 0 },
   settings: { sound: true, animations: true }
 }
 ```
@@ -78,7 +78,7 @@ gold = 150
 
 ## 5. 多牌组与阵营
 
-- 最多 3 套；默认 `deck-1` 几何基础。
+- 最多 3 套玩家牌组；逻辑未解锁时上限 2，1-10 赠送的逻辑套牌标记 `system`，不受普通上限影响。
 - 主阵营 `geometry` / `logic`，只能加入对应阵营 + `neutral`。
 - `canUseInDeck()` 统一判断；`validateDeck()` 返回逐条错误。
 - 每套牌 25 张，同名普通 3 / 巨匠 1。
@@ -117,12 +117,12 @@ sources: [
 
 ## 8. 新机制
 
-- `negate`：取消对方最近一张策略牌效果。`lastSpecial` 记录可逆细节；否定后清空。
+- `negate`：只否定对方上一动作中 `negatable` 且带 `undo` 的策略；`lastAction` 记录完整 undo，否定后下一动作覆盖。
 - `diagonal`：对方一排 ≥3 单位时，己方对应排生成 3 点自指命题。
 - `deduce`：若上一张牌是逻辑单位，本牌 +4；`deduced` 在打出时固化。
 - `axiomatize`：普通单位 `axiomized = true`，本小局不受排效果；巨匠本来就免疫。
 
-`battle.js` 仍为纯逻辑、可序列化；`lastSpecial` / `lastPlayed` / `deduced` / `axiomized` 都是普通对象字段。
+`battle.js` 仍为纯逻辑、可序列化；`lastAction` / `lastPlayed` / `deduced` / `axiomized` 都是普通对象字段。
 
 ## 9. AI 性格
 
@@ -159,11 +159,11 @@ BOSS `incompleteness`：第 2、3 小局开始时随机一排 -3。
 
 - `engine.test.js`：45 条基础规则。
 - `playtest.test.js`：6 条试玩记录。
-- `phase2.test.js`：17 条迁移、金币、多牌组、阵营、商店、逻辑机制、第二章。
+- `phase2.test.js`：35 条迁移、金币、多牌组、阵营、商店、逻辑机制、第二章。
 - `sim.js`：几何 / 逻辑 × 第一章 / 第二章，输出 R1 投入、Pass、剩余手牌、分差。
 - `browser.js`：1-1、商店购买/刷新、多牌组、1-10 解锁、逻辑牌组、2-1、刷新读档。
 
-合计 68 条自动化测试。
+合计 86 条自动化测试。
 
 ## 13. 验收
 
@@ -177,3 +177,12 @@ BOSS `incompleteness`：第 2、3 小局开始时随机一排 -3。
 - 旧 V2 存档不丢收藏 / 通关 / 牌组。
 - 第二章 AI 会 Pass、让局、追分。
 - 桌面浏览器完整可用。
+
+## 14. 封版修复（第二阶段收尾）
+
+- **逻辑否定**：`lastAction` 只记录对手上一动作；只有 `negatable` 且带 `undo` 的策略才可否定。抽牌类（反例、反例扩展、完备性）、引证、逻辑否定本身不可否定。undo 记录完整包含 side / row / uid / 原单位或原排效果，不再猜测 token 在哪一侧。
+- **商店刷新**：通关不再自动换库存；每次通关获得 1 次免费刷新（上限 3）。玩家主动使用免费次数，否则支付 20 金币。
+- **牌组槽位**：逻辑未解锁时最多 2 套；解锁后 3 套。1-10 赠送的逻辑套牌标记 `system: true`，不受普通上限限制，历史 3 套几何档也能拿到合法逻辑牌组。
+- **旧档迁移**：四张经典悖论改为 `neutral`；旧 V2 `deck` 迁移后调用 `repairDeck()`，优先用当前阵营合法卡补足 25 张，不足则 `needsRepair = true` 并在 UI 提示。
+- **AI 抽牌价值**：删除反例/引证/共识硬编码，统一用「牌库减少量 × 4」计算抽牌价值；Beam Search 深度允许超过初始手牌数，能模拟抽牌后的后续行动。
+- **商店进度**：卡牌新增 `shopUnlockIndex`；商店池按最高通关关卡过滤。1-10 后不会出现 2-8 后期卡；2-3 后逻辑否定进入池，2-5 后对角线进入池。巨匠与悖论仍不进入普通池。

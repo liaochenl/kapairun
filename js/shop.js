@@ -9,6 +9,7 @@
 
   const SLOTS = 6;
   const REFRESH_COST = 20;
+  const MAX_FREE_REFRESHES = 3;
 
   function rng(seed) {
     let a = (Number(seed) >>> 0) || 0x9e3779b9;
@@ -28,12 +29,22 @@
     return DATA.SHOP_TIERS[def.shopTier] || DATA.SHOP_TIERS.basic;
   }
 
+  function highestClearedIndex(profile) {
+    let highest = 0;
+    DATA.STAGES.forEach(function (stage) {
+      if (profile.clearedStages[stage.id] && stage.index > highest) highest = stage.index;
+    });
+    return highest;
+  }
+
   function buildShopPool(profile) {
+    const highest = highestClearedIndex(profile);
     return DATA.CARDS.filter(function (def) {
       if (!def.collectible || !def.shop) return false;
       if (profile.collection[def.id] >= DATA.maxCopies(def.id)) return false;
       if (def.faction === 'logic' && !profile.unlockedFactions.logic) return false;
       if (!profile.unlockedChapters[def.chapter || 1]) return false;
+      if (def.shopUnlockIndex && highest < def.shopUnlockIndex) return false;
       return true;
     }).map(function (def) { return def.id; });
   }
@@ -67,7 +78,8 @@
   }
 
   function ensureShop(profile) {
-    if (!profile.shop) profile.shop = { inventory: [], seed: 0, refreshCount: 0 };
+    if (!profile.shop) profile.shop = { inventory: [], seed: 0, refreshCount: 0, freeRefreshes: 0 };
+    if (profile.shop.freeRefreshes == null) profile.shop.freeRefreshes = 0;
     if (!profile.shop.seed) {
       createShop(profile);
       return true;
@@ -78,9 +90,20 @@
   function refreshShop(profile, options) {
     const opts = options || {};
     ensureShop(profile);
-    if (!opts.free) {
+    let usedFree = false;
+    let cost = REFRESH_COST;
+    if ((profile.shop.freeRefreshes || 0) > 0) {
+      profile.shop.freeRefreshes -= 1;
+      usedFree = true;
+      cost = 0;
+    } else {
       if (profile.gold < REFRESH_COST) {
-        return { ok: false, reason: '金币不足（需要 ' + REFRESH_COST + '）', inventory: profile.shop.inventory };
+        return {
+          ok: false,
+          reason: '金币不足（需要 ' + REFRESH_COST + '）',
+          inventory: profile.shop.inventory,
+          freeRefreshes: 0
+        };
       }
       profile.gold -= REFRESH_COST;
     }
@@ -95,7 +118,9 @@
       ok: true,
       reason: '',
       inventory: profile.shop.inventory,
-      cost: opts.free ? 0 : REFRESH_COST,
+      cost: cost,
+      usedFree: usedFree,
+      freeRefreshes: profile.shop.freeRefreshes,
       seed: seed
     };
   }
@@ -127,6 +152,7 @@
   return {
     SLOTS: SLOTS,
     REFRESH_COST: REFRESH_COST,
+    MAX_FREE_REFRESHES: MAX_FREE_REFRESHES,
     getShopPrice: getShopPrice,
     buildShopPool: buildShopPool,
     buildInventory: buildInventory,

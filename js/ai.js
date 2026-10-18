@@ -15,6 +15,8 @@
     return JSON.parse(JSON.stringify(state));
   }
 
+  const CARD_ADVANTAGE_VALUE = 4;
+
   function handGain(state, side, handIndex, opts) {
     const before = BATTLE.calculateScore(state);
     const copy = clone(state);
@@ -23,11 +25,9 @@
     const after = BATTLE.calculateScore(copy);
     const opp = BATTLE.other(side);
     let gain = (after[side] - before[side]) - (after[opp] - before[opp]);
-    const def = DATA.CARD_MAP[state[side].hand[handIndex]];
-    if (def.ability === 'counterexample') gain += 5;
-    else if (def.ability === 'citation') gain += 1;
-    else if (def.ability === 'consensus') gain += 2;
-    else if (def.ability === 'withdraw') gain += 3;
+    /* 抽牌价值统一按牌库减少量计算；出牌本身消耗手牌，不计入 drawn。 */
+    const drawn = state[side].deck.length - copy[side].deck.length;
+    gain += Math.max(0, drawn) * CARD_ADVANTAGE_VALUE;
     return { gain: gain, state: copy };
   }
 
@@ -134,7 +134,7 @@
     }
 
     const beamWidth = (options && options.beamWidth) || BEAM_WIDTH;
-    const maxDepth = Math.min(sim[side].hand.length, (options && options.maxDepth) || MAX_DEPTH);
+    const maxDepth = (options && options.maxDepth) || MAX_DEPTH;
     let frontier = [{ state: sim, sequence: [], score: startScore }];
     let bestScore = startScore;
     let bestSequence = [];

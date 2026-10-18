@@ -48,6 +48,7 @@
       bondId: null,
       maxCopies: 3,
       collectible: true,
+      negatable: false,
       text: text
     }, extra || {});
   }
@@ -56,7 +57,7 @@
     return {
       id: id,
       name: name,
-      faction: 'logic',
+      faction: 'neutral',
       type: 'paradox',
       row: null,
       power: 0,
@@ -65,6 +66,7 @@
       bondId: null,
       maxCopies: 3,
       collectible: true,
+      negatable: true,
       text: text
     };
   }
@@ -151,13 +153,13 @@
     special('citation', '引证', 'citation',
       '选择弃牌堆中一张单位牌，直接放回它所在的排。'),
     special('consensus', '学术共识', 'consensus',
-      '己方场上所有单位 +2 论证力，持续到本小局结束。'),
+      '己方场上所有单位 +2 论证力，持续到本小局结束。', { negatable: true }),
     special('withdraw', '撤回命题', 'withdraw',
-      '将己方一张单位收回手牌。'),
+      '将己方一张单位收回手牌。', { negatable: true }),
     special('reductio', '反证法', 'reductio',
-      '摧毁对方论证力最高的非巨匠单位。'),
+      '摧毁对方论证力最高的非巨匠单位。', { negatable: true }),
     special('clarify', '公理澄清', 'clarify',
-      '解除一排的悖论效果。'),
+      '解除一排的悖论效果。', { negatable: true }),
 
     /* ---- 逻辑与集合：基础单位 ×9 ---- */
     unit('proposition', '命题', 'logic', 'axiom', 4, null, {
@@ -238,11 +240,11 @@
     special('logical-negation', '逻辑否定', 'negate',
       '取消对方最近打出的一张策略牌的效果。'),
     special('diagonal', '对角线法', 'diagonal',
-      '对方一排有至少 3 个单位时，在己方对应排生成一个 3 点「自指命题」。'),
+      '对方一排有至少 3 个单位时，在己方对应排生成一个 3 点「自指命题」。', { negatable: true }),
     special('formalization', '形式化', 'axiomatize',
-      '选择己方一个普通单位，使其本小局不受悖论影响。'),
+      '选择己方一个普通单位，使其本小局不受悖论影响。', { negatable: true }),
     special('consistency', '一致性', 'clarify',
-      '解除一排的悖论效果。'),
+      '解除一排的悖论效果。', { negatable: true }),
     special('completeness', '完备性', 'draw',
       '抽 2 张牌。', { draw: 2 }),
 
@@ -946,6 +948,7 @@
     else card.shopTier = 'basic';
     card.shop = card.collectible && card.shopTier !== 'master';
     card.price = card.price != null ? card.price : SHOP_TIERS[card.shopTier];
+    card.shopUnlockIndex = 0;
     card.sources = [];
   });
 
@@ -983,11 +986,32 @@
   }).map(function (card) { return card.id; });
   PHASE2_IDS.forEach(function (id) { CARD_MAP[id].chapter = 2; });
 
-  /* 首通固定/三选一/悖论解锁属于明确挑战奖励，不进入普通商店随机池。 */
+  /* 首通奖励在对应关卡通关后才进入商店；巨匠与悖论仍不进入普通池。 */
   CARDS.forEach(function (card) {
-    if (card.sources.some(function (s) { return s.type === 'stage' || s.type === 'boss'; })) {
-      card.shop = false;
-    }
+    card.sources.forEach(function (src) {
+      if (src.type === 'stage' || src.type === 'boss') {
+        const stage = STAGE_MAP[src.stage];
+        if (stage) card.shopUnlockIndex = Math.max(card.shopUnlockIndex, stage.index);
+      }
+    });
+    if (card.ability === 'master' || card.type === 'paradox') card.shop = false;
+  });
+
+  /* 第二章商店进度：机制在教学关之后才进入普通池。 */
+  const SHOP_UNLOCK = {
+    'proposition': 11, 'predicate': 11, 'relation': 11, 'formal-language': 11,
+    'proof-tree': 11, 'cardinal': 11, 'ordinal': 11,
+    'cantor': 12,
+    'logical-negation': 13, 'extended-counterexample': 13,
+    'mapping': 14, 'model': 14,
+    'diagonal': 15,
+    'formalization': 16, 'consistency': 16, 'frege': 16, 'peano': 16,
+    'hilbert': 17, 'boole': 17, 'dedekind': 17, 'zermelo': 17, 'tarski': 17,
+    'turing': 18, 'russell-adv': 18, 'completeness': 18,
+    'godel': 19
+  };
+  Object.keys(SHOP_UNLOCK).forEach(function (id) {
+    if (CARD_MAP[id]) CARD_MAP[id].shopUnlockIndex = Math.max(CARD_MAP[id].shopUnlockIndex, SHOP_UNLOCK[id]);
   });
 
   CARDS.forEach(function (card) {

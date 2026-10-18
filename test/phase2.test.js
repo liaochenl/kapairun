@@ -65,7 +65,9 @@ test('第一阶段 V2 存档迁移：deck -> decks，保留收藏与通关', fun
   assert.strictEqual(p.gold, 150);
   assert.strictEqual(p.decks.length, 1);
   assert.strictEqual(p.decks[0].faction, 'geometry');
-  assert.strictEqual(p.decks[0].cards.length, 3);
+  assert.ok(p.decks[0].cards.indexOf('euclid-apprentice') !== -1);
+  assert.ok(p.decks[0].cards.indexOf('triangle') !== -1);
+  assert.strictEqual(p.decks[0].needsRepair, true);
   assert.strictEqual(p.activeDeckId, p.decks[0].id);
   assert.strictEqual(p.clearedStages['1-1'], true);
   assert.strictEqual(p.collection.triangle, 2);
@@ -92,6 +94,10 @@ test('最多 3 套牌，可切换 / 重命名 / 删除', function () {
   assert.strictEqual(r.ok, true);
   assert.strictEqual(p.decks.length, 2);
   r = META.createDeck(p, { name: '第三套', faction: 'geometry' });
+  assert.strictEqual(r.ok, false);
+  p.unlockedFactions.logic = true;
+  p.unlockedChapters[2] = true;
+  r = META.createDeck(p, { name: '第三套', faction: 'geometry' });
   assert.strictEqual(r.ok, true);
   r = META.createDeck(p, { name: '第四套', faction: 'geometry' });
   assert.strictEqual(r.ok, false);
@@ -112,6 +118,34 @@ test('阵营限制：几何牌组不能加入逻辑专属，中立可以', funct
   assert.strictEqual(META.canAdd(p, 'cantor', p.activeDeckId).ok, false);
   assert.strictEqual(META.canAdd(p, 'infinity', p.activeDeckId).ok, true);
   assert.strictEqual(META.addCard(p, 'infinity').ok, true);
+});
+
+test('逻辑未解锁时最多 2 套，解锁后 3 套', function () {
+  const p = META.defaultProfile();
+  assert.strictEqual(META.currentDeckLimit(p), 2);
+  assert.strictEqual(META.createDeck(p, { name: 'B', faction: 'geometry' }).ok, true);
+  assert.strictEqual(META.createDeck(p, { name: 'C', faction: 'geometry' }).ok, false);
+  p.unlockedFactions.logic = true;
+  p.unlockedChapters[2] = true;
+  assert.strictEqual(META.currentDeckLimit(p), 3);
+  assert.strictEqual(META.createDeck(p, { name: 'C', faction: 'geometry' }).ok, true);
+  assert.strictEqual(META.createDeck(p, { name: 'D', faction: 'geometry' }).ok, false);
+});
+
+test('已有 3 套几何旧档，通关 1-10 仍会赠送系统逻辑套牌', function () {
+  const p = META.defaultProfile();
+  p.decks.push(
+    { id: 'deck-2', name: '几何 B', faction: 'geometry', cards: DATA.STARTER_DECK.slice() },
+    { id: 'deck-3', name: '几何 C', faction: 'geometry', cards: DATA.STARTER_DECK.slice() }
+  );
+  p.activeDeckId = 'deck-3';
+  META.completeStage(p, '1-10');
+  assert.strictEqual(p.decks.length, 4);
+  const logic = p.decks.find(function (d) { return d.faction === 'logic'; });
+  assert.ok(logic);
+  assert.strictEqual(logic.system, true);
+  assert.strictEqual(logic.cards.length, 25);
+  assert.strictEqual(META.validateDeck(p, logic).ok, true);
 });
 
 test('通关 1-10 解锁逻辑与第二章，赠送合法逻辑套牌', function () {
@@ -163,17 +197,54 @@ test('金币不足与拥有上限时不能购买', function () {
   assert.strictEqual(SHOP.buyShopCard(p, 0).ok, false);
 });
 
-test('手动刷新扣 20，自动刷新不扣金币', function () {
+test('通关增加免费刷新，且不改变当前库存', function () {
   const p = META.defaultProfile();
   SHOP.createShop(p, 9);
-  let gold = p.gold;
-  let res = SHOP.refreshShop(p, { free: false });
+  const before = p.shop.inventory.map(function (s) { return s.cardId; });
+  META.completeStage(p, '1-1');
+  assert.deepStrictEqual(p.shop.inventory.map(function (s) { return s.cardId; }), before);
+  assert.strictEqual(p.shop.freeRefreshes, 1);
+  META.completeStage(p, '1-1');
+  assert.strictEqual(p.shop.freeRefreshes, 2);
+  META.completeStage(p, '1-1');
+  assert.strictEqual(p.shop.freeRefreshes, 3);
+  META.completeStage(p, '1-1');
+  assert.strictEqual(p.shop.freeRefreshes, 3);
+  META.completeStage(p, '1-1');
+});
+
+test('免费刷新不扣金币、次数递减；用完后刷新扣 20', function () {
+  const p = META.defaultProfile();
+  SHOP.createShop(p, 9);
+  p.shop.freeRefreshes = 1;
+  const gold = p.gold;
+  let res = SHOP.refreshShop(p);
   assert.strictEqual(res.ok, true);
-  assert.strictEqual(p.gold, gold - 20);
-  gold = p.gold;
-  res = SHOP.refreshShop(p, { free: true });
-  assert.strictEqual(res.ok, true);
+  assert.strictEqual(res.usedFree, true);
+  assert.strictEqual(res.cost, 0);
   assert.strictEqual(p.gold, gold);
+  assert.strictEqual(p.shop.freeRefreshes, 0);
+  res = SHOP.refreshShop(p);
+  assert.strictEqual(res.ok, true);
+  assert.strictEqual(res.usedFree, false);
+  assert.strictEqual(p.gold, gold - 20);
+});
+
+test('商店按最高通关关卡逐步开放', function () {
+  const p = META.defaultProfile();
+  ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8', '1-9', '1-10'].forEach(function (id) {
+    META.completeStage(p, id);
+  });
+  let pool = SHOP.buildShopPool(p);
+  assert.strictEqual(pool.indexOf('logical-negation'), -1);
+  assert.strictEqual(pool.indexOf('diagonal'), -1);
+  META.completeStage(p, '2-3');
+  pool = SHOP.buildShopPool(p);
+  assert.ok(pool.indexOf('logical-negation') !== -1);
+  assert.strictEqual(pool.indexOf('diagonal'), -1);
+  META.completeStage(p, '2-5');
+  pool = SHOP.buildShopPool(p);
+  assert.ok(pool.indexOf('diagonal') !== -1);
 });
 
 test('逻辑牌在解锁前不会进入商店，巨匠不会进入普通商店', function () {
@@ -181,11 +252,16 @@ test('逻辑牌在解锁前不会进入商店，巨匠不会进入普通商店',
   const pool = SHOP.buildShopPool(p);
   assert.ok(pool.every(function (id) { return DATA.CARD_MAP[id].faction !== 'logic'; }));
   assert.ok(pool.every(function (id) { return DATA.CARD_MAP[id].ability !== 'master'; }));
-  p.unlockedFactions.logic = true;
-  p.unlockedChapters[2] = true;
+  ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8', '1-9', '1-10', '2-1', '2-2', '2-3'].forEach(function (id) {
+    META.completeStage(p, id);
+  });
   const pool2 = SHOP.buildShopPool(p);
   assert.ok(pool2.some(function (id) { return DATA.CARD_MAP[id].faction === 'logic'; }));
   assert.ok(pool2.every(function (id) { return DATA.CARD_MAP[id].ability !== 'master'; }));
+  assert.ok(pool2.indexOf('logical-negation') !== -1);
+  assert.strictEqual(pool2.indexOf('diagonal'), -1);
+  META.completeStage(p, '2-5');
+  assert.ok(SHOP.buildShopPool(p).indexOf('diagonal') !== -1);
 });
 
 test('deduce 会根据上一张逻辑单位 +4', function () {
@@ -199,13 +275,100 @@ test('deduce 会根据上一张逻辑单位 +4', function () {
   assert.strictEqual(BATTLE.unitPower(state, 'player', unit), 9);
 });
 
-test('negate 取消对方最近打出的策略牌', function () {
-  const state = playState(['counterexample'], ['logical-negation']);
-  assert.strictEqual(play(state, 'player', 'counterexample', { row: 'reasoning' }).ok, true);
-  assert.strictEqual(state.ai.board.reasoning.length, 1);
-  assert.strictEqual(play(state, 'ai', 'logical-negation').ok, true);
+test('AI 用牌库减少量统一计算抽牌价值', function () {
+  const state = playState(['completeness', 'counterexample', 'extended-counterexample'], []);
+  state.player.deck = ['proposition', 'relation'];
+  const actions = AI.candidateActions(state, 'player');
+  const pick = function (id) {
+    return actions.find(function (a) { return a.cardId === id; });
+  };
+  assert.ok(pick('completeness').gain >= 8);
+  assert.ok(pick('extended-counterexample').gain > pick('counterexample').gain);
+});
+
+test('完备性不会被 AI 当成 0 价值直接 Pass', function () {
+  const state = playState([], ['completeness']);
+  state.current = 'ai';
+  state.ai.deck = ['triangle'];
+  const action = AI.chooseAction(state, 'ai');
+  assert.strictEqual(action.type, 'play');
+  assert.strictEqual(action.cardId, 'completeness');
+});
+
+test('Beam Search 会模拟抽牌后的后续行动', function () {
+  const state = playState(['completeness'], []);
+  state.player.deck = ['triangle'];
+  const chase = AI.estimateCatchup(state, 'player', 3);
+  assert.strictEqual(chase.catchable, true);
+  assert.strictEqual(chase.cardsNeeded, 2);
+  assert.strictEqual(chase.sequence[0].cardId, 'completeness');
+});
+
+test('negate 取消反证法并恢复原单位', function () {
+  const state = playState(['reductio'], ['logical-negation']);
+  const target = place(state, 'ai', 'descartes', 'reasoning');
+  assert.strictEqual(play(state, 'player', 'reductio').ok, true);
   assert.strictEqual(state.ai.board.reasoning.length, 0);
-  assert.strictEqual(state.lastSpecial, null);
+  assert.strictEqual(play(state, 'ai', 'logical-negation').ok, true);
+  assert.strictEqual(state.ai.board.reasoning.length, 1);
+  assert.strictEqual(state.ai.board.reasoning[0].uid, target.uid);
+  assert.ok(state.ai.discard.indexOf('descartes') === -1);
+  assert.strictEqual(state.lastAction.cardId, 'logical-negation');
+});
+
+test('negate 对角线时删除正确一方的自指 token', function () {
+  const state = playState(['diagonal'], ['logical-negation']);
+  place(state, 'ai', 'relation');
+  place(state, 'ai', 'mapping');
+  place(state, 'ai', 'predicate');
+  assert.strictEqual(play(state, 'player', 'diagonal', { row: 'reasoning' }).ok, true);
+  assert.strictEqual(state.player.board.reasoning.length, 1);
+  assert.strictEqual(play(state, 'ai', 'logical-negation').ok, true);
+  assert.strictEqual(state.player.board.reasoning.length, 0);
+});
+
+test('negate 悖论时恢复之前的排效果', function () {
+  const state = playState(['zeno'], ['logical-negation']);
+  state.effects.reasoning = { cardId: 'old', name: '旧效果', mode: 'flat', value: -1 };
+  assert.strictEqual(play(state, 'player', 'zeno', { row: 'reasoning' }).ok, true);
+  assert.strictEqual(state.effects.reasoning.cardId, 'zeno');
+  assert.strictEqual(play(state, 'ai', 'logical-negation').ok, true);
+  assert.strictEqual(state.effects.reasoning.cardId, 'old');
+});
+
+test('对方策略后又打单位，不能再否定更早的策略', function () {
+  const state = playState(['consensus', 'logical-negation'], ['proposition']);
+  assert.strictEqual(play(state, 'player', 'consensus').ok, true);
+  assert.strictEqual(play(state, 'ai', 'proposition').ok, true);
+  assert.strictEqual(play(state, 'player', 'logical-negation').ok, false);
+});
+
+test('对方 Pass 后不能否定之前的策略', function () {
+  const state = playState(['consensus', 'logical-negation'], []);
+  assert.strictEqual(play(state, 'player', 'consensus').ok, true);
+  assert.strictEqual(BATTLE.pass(state, 'ai').ok, true);
+  assert.strictEqual(play(state, 'player', 'logical-negation').ok, false);
+});
+
+test('完备性抽牌不可被否定', function () {
+  const state = playState(['completeness'], ['logical-negation']);
+  assert.strictEqual(play(state, 'player', 'completeness').ok, true);
+  assert.strictEqual(play(state, 'ai', 'logical-negation').ok, false);
+});
+
+test('反例扩展不可被否定', function () {
+  const state = playState(['extended-counterexample'], ['logical-negation']);
+  assert.strictEqual(play(state, 'player', 'extended-counterexample', { row: 'reasoning' }).ok, true);
+  assert.strictEqual(state.ai.board.reasoning.length, 1);
+  assert.strictEqual(play(state, 'ai', 'logical-negation').ok, false);
+  assert.strictEqual(state.ai.board.reasoning.length, 1);
+});
+
+test('逻辑否定本身不能被逻辑否定', function () {
+  const state = playState(['consensus', 'logical-negation'], ['logical-negation']);
+  assert.strictEqual(play(state, 'player', 'consensus').ok, true);
+  assert.strictEqual(play(state, 'ai', 'logical-negation').ok, true);
+  assert.strictEqual(play(state, 'player', 'logical-negation').ok, false);
 });
 
 test('diagonal 在对方三单位时生成自指命题', function () {
@@ -285,4 +448,64 @@ test('旧 V2 存档迁移后仍可保存读取，新增字段默认值正确', f
   assert.strictEqual(again.decks.length, 1);
   assert.strictEqual(again.shop.inventory.length, 0);
   assert.strictEqual(again.activeDeckId, again.decks[0].id);
+});
+
+
+test('商店免费刷新次数写入存档并读回', function () {
+  const storage = memStorage();
+  const p = META.defaultProfile();
+  SHOP.createShop(p, 12);
+  p.shop.freeRefreshes = 2;
+  META.saveProfile(p, storage);
+  const loaded = META.loadProfile(storage);
+  assert.ok(loaded);
+  assert.strictEqual(loaded.shop.freeRefreshes, 2);
+  const before = loaded.shop.inventory.map(function (s) { return s.cardId; });
+  const res = SHOP.refreshShop(loaded);
+  assert.strictEqual(res.usedFree, true);
+  assert.strictEqual(loaded.shop.freeRefreshes, 1);
+  assert.notDeepStrictEqual(loaded.shop.inventory.map(function (s) { return s.cardId; }), before);
+});
+
+
+test('旧 V2 牌组中的经典悖论迁移后仍是 25 张合法牌组', function () {
+  const storage = memStorage();
+  const collection = Object.assign({}, DATA.STARTER_COUNTS, { russell: 1, zeno: 1 });
+  const deck = DATA.STARTER_DECK.slice(0, 23).concat(['russell', 'zeno']);
+  storage.setItem(META.STORAGE_KEY, JSON.stringify({
+    version: 2, collection: collection, deck: deck,
+    clearedStages: {}, claimedRewards: {}, discoveredCards: Object.keys(collection),
+    settings: { sound: true, animations: true }
+  }));
+  const p = META.loadProfile(storage);
+  assert.ok(p);
+  assert.strictEqual(p.decks[0].cards.length, 25);
+  assert.ok(p.decks[0].cards.indexOf('russell') !== -1);
+  assert.ok(p.decks[0].cards.indexOf('zeno') !== -1);
+  assert.strictEqual(META.validateDeck(p, p.decks[0]).ok, true);
+});
+
+test('旧 V2 含非法卡时 repairDeck 自动补足 25 张', function () {
+  const storage = memStorage();
+  const deck = DATA.STARTER_DECK.slice(0, 24).concat(['deleted-card']);
+  const collection = Object.assign({}, DATA.STARTER_COUNTS, { 'auxiliary-line': 1 });
+  storage.setItem(META.STORAGE_KEY, JSON.stringify({
+    version: 2, collection: collection, deck: deck,
+    clearedStages: {}, claimedRewards: {}, discoveredCards: Object.keys(collection),
+    settings: { sound: true, animations: true }
+  }));
+  const p = META.loadProfile(storage);
+  assert.strictEqual(p.decks[0].cards.length, 25);
+  assert.strictEqual(p.decks[0].needsRepair, false);
+  assert.strictEqual(META.validateDeck(p, p.decks[0]).ok, true);
+});
+
+test('收藏不足时 repairDeck 标记 needsRepair', function () {
+  const p = META.defaultProfile();
+  p.collection = { 'euclid-apprentice': 1 };
+  const deck = { id: 'deck-1', name: '残缺', faction: 'geometry', cards: ['euclid-apprentice'] };
+  const res = META.repairDeck(p, deck);
+  assert.strictEqual(deck.needsRepair, true);
+  assert.strictEqual(deck.cards.length, 1);
+  assert.strictEqual(res.needsRepair, true);
 });

@@ -27,6 +27,7 @@
     fixedGained: [],
     paradoxUnlocked: null,
     stageGold: 0,
+    stageFreeRefresh: false,
     playtestSession: null,
     aiDelay: 620
   };
@@ -374,7 +375,7 @@
 
     const tabs = p.decks.map(function (d) {
       return '<button class="deck-tab ' + (d.id === deck.id ? 'active' : '') + '" data-action="switch-deck" data-id="' + d.id + '">' +
-        '<span>' + esc(d.name) + '</span><small>' + esc((DATA.FACTIONS[d.faction] || {}).name || d.faction) + ' · ' + d.cards.length + '/25</small></button>';
+        '<span>' + esc(d.name) + (d.system ? ' · 赠送' : '') + '</span><small>' + esc((DATA.FACTIONS[d.faction] || {}).name || d.faction) + ' · ' + d.cards.length + '/25</small></button>';
     }).join('');
 
     const rowCounts = { axiom: 0, reasoning: 0, theorem: 0 };
@@ -395,7 +396,7 @@
       '    <span class="deck-total ' + (check.ok ? 'ok' : 'bad') + '">' + deck.cards.length + ' / 25</span>' +
       '  </header>' +
       '  <div class="deck-tabs">' + tabs +
-      '    <button class="deck-tab add" data-action="new-deck"' + (p.decks.length >= META.MAX_DECKS ? ' disabled' : '') + '>＋ 新牌组</button>' +
+      '    <button class="deck-tab add" data-action="new-deck"' + (p.decks.length >= META.currentDeckLimit(p) ? ' disabled' : '') + '>＋ 新牌组</button>' +
       '  </div>' +
       '  <div class="deck-deckhead">' +
       '    <div><strong>' + esc(deck.name) + '</strong><span>' + esc((DATA.FACTIONS[deck.faction] || {}).name || deck.faction) + '</span></div>' +
@@ -421,6 +422,7 @@
       '      </dl>' +
       (check.ok ? '<p class="deck-valid">牌组合法，可以开课。</p>'
         : '<ul class="deck-errors">' + check.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>') +
+      (deck.needsRepair ? '<p class="deck-errors">版本更新后该牌组需要补充 ' + (25 - deck.cards.length) + ' 张牌。</p>' : '') +
       '      <button class="primary wide" data-action="nav-stages">去课程</button>' +
       '    </aside>' +
       '  </div>' +
@@ -506,13 +508,16 @@
       '<section class="screen shop">' +
       '  <header class="page-head">' +
       '    <button class="ghost" data-action="nav-home">← 学院</button>' +
-      '    <div><h2>学术商店</h2><p>通关后自动刷新 · 只出售已解锁学派的非首通奖励卡</p></div>' +
+      '    <div><h2>学术商店</h2><p>通关获得免费刷新次数 · 商店不会自动换货 · 首通奖励通关后可购买</p></div>' +
       '    <div class="shop-head-right"><span class="gold-chip">金币 ' + p.gold + '</span>' +
-      '      <button class="ghost" data-action="shop-refresh"' + (p.gold < SHOP.REFRESH_COST ? ' disabled' : '') + '>刷新 ' + SHOP.REFRESH_COST + '</button>' +
+      '      <button class="ghost" data-action="shop-refresh"' +
+      ((p.shop.freeRefreshes || 0) > 0 || p.gold >= SHOP.REFRESH_COST ? '' : ' disabled') + '>' +
+      ((p.shop.freeRefreshes || 0) > 0 ? '免费刷新 · 剩余 ' + p.shop.freeRefreshes : '刷新 · ' + SHOP.REFRESH_COST + ' 金币') +
+      '</button>' +
       '    </div>' +
       '  </header>' +
       '  <div class="shop-grid">' + slots.join('') + '</div>' +
-      '  <p class="page-note">刷新后旧商品会消失；购买后立即进入收藏。首通奖励卡与巨匠不会出现在商店。</p>' +
+      '  <p class="page-note">刷新后旧商品会消失；购买后立即进入收藏。首通奖励在通关后才会进入商店，巨匠与悖论不出售。</p>' +
       '</section>';
   }
 
@@ -976,6 +981,7 @@
       '  <h2 class="result-title ' + res.winner + '">' + title + '</h2>' +
       '</div>' +
       (app.stageGold ? '<div class="gained"><span>金币 · 已获得</span><strong>+' + app.stageGold + ' 学术金币</strong><small>当前金币 ' + app.profile.gold + '</small></div>' : '') +
+      (app.stageFreeRefresh ? '<p class="modal-tip">获得 1 次免费商店刷新。商店不会自动换货。</p>' : '') +
       '<div class="final-score">' +
       '  <span class="fs-side">你</span><strong>' + res.playerSeals + '</strong>' +
       '  <span class="fs-colon">:</span>' +
@@ -1032,6 +1038,7 @@
     app.fixedGained = [];
     app.paradoxUnlocked = null;
     app.stageGold = 0;
+    app.stageFreeRefresh = false;
     app.mulliganSel = [];
     app.modal = { type: 'mulligan' };
     if (location.hash === '#battle') {
@@ -1287,10 +1294,10 @@
     if (m.result.winner === 'player') {
       const clear = META.completeStage(app.profile, app.stage.id);
       app.stageGold = clear.gold;
+      app.stageFreeRefresh = clear.freeRefresh;
       const fixed = META.claimFixedRewards(app.profile, app.stage.id);
       app.fixedGained = fixed.newly;
       if (app.stage.id === '1-10') app.paradoxUnlocked = META.unlockParadoxes(app.profile);
-      SHOP.refreshShop(app.profile, { free: true });
       save();
       const options = META.rewardOptions(app.profile, app.stage.id);
       if (options.length) {
@@ -1353,6 +1360,7 @@
     app.fixedGained = [];
     app.paradoxUnlocked = null;
     app.stageGold = 0;
+    app.stageFreeRefresh = false;
     go('stages');
   }
 
@@ -1422,11 +1430,11 @@
       return;
     }
     if (action === 'shop-refresh') {
-      const res = SHOP.refreshShop(app.profile, { free: false });
+      const res = SHOP.refreshShop(app.profile);
       if (!res.ok) { toast(res.reason); return; }
       save();
       render();
-      toast('商店已刷新 · -' + SHOP.REFRESH_COST + ' 金币');
+      toast(res.usedFree ? '免费刷新已使用 · 剩余 ' + res.freeRefreshes : '商店已刷新 · -' + res.cost + ' 金币');
       return;
     }
     if (action === 'clear-playtest') {
@@ -1534,6 +1542,7 @@
       app.fixedGained = [];
       app.paradoxUnlocked = null;
       app.stageGold = 0;
+      app.stageFreeRefresh = false;
       go('deck'); return;
     }
     if (action === 'reward-pick') { claimReward(id); return; }

@@ -297,10 +297,14 @@ async function main() {
   await click('[data-action="shop-buy"]');
   await wait(350);
   console.log('shop buy:', shopBefore, '->', await evalJs('JSON.stringify({gold:TA_UI.app.profile.gold,sold:TA_UI.app.profile.shop.inventory.filter(function(s){return s.sold;}).length})'));
+  console.log('free refreshes:', await evalJs('TA_UI.app.profile.shop.freeRefreshes'));
   const goldBeforeRefresh = await evalJs('TA_UI.app.profile.gold');
   await click('[data-action="shop-refresh"]');
   await wait(350);
-  console.log('shop refresh:', goldBeforeRefresh, '->', await evalJs('TA_UI.app.profile.gold'), 'count', await evalJs('TA_UI.app.profile.shop.refreshCount'));
+  console.log('free refresh:', goldBeforeRefresh, '->', await evalJs('TA_UI.app.profile.gold'), 'free', await evalJs('TA_UI.app.profile.shop.freeRefreshes'));
+  await click('[data-action="shop-refresh"]');
+  await wait(350);
+  console.log('paid refresh:', await evalJs('TA_UI.app.profile.gold'), 'count', await evalJs('TA_UI.app.profile.shop.refreshCount'));
   await shot('shop-after');
 
   /* 多牌组：新建、切换 */

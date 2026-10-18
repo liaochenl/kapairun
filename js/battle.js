@@ -92,7 +92,7 @@
       rngState: seed,
       effects: { axiom: null, reasoning: null, theorem: null },
       lastRound: null,
-      lastSpecial: null,
+      lastAction: null,
       rounds: [],
       result: null,
       log: [],
@@ -262,8 +262,12 @@
     } else if (def.ability === 'paradox') {
       if (!isRow(o.row)) return '请选择一排';
     } else if (def.ability === 'negate') {
-      if (!state.lastSpecial || state.lastSpecial.side === side) {
-        return '对方最近没有可以否定的策略牌';
+      if (!state.lastAction ||
+          state.lastAction.side === side ||
+          state.lastAction.type !== 'special' ||
+          !state.lastAction.negatable ||
+          !state.lastAction.undo) {
+        return '对方上一动作没有可以否定的策略牌';
       }
     } else if (def.ability === 'diagonal') {
       const opp = other(side);
@@ -337,12 +341,20 @@
       const unit = { uid: state.uid++, id: cardId, row: def.row, deduced: deduced };
       s.board[def.row].push(unit);
       s.lastPlayed = { cardId: cardId, faction: def.faction, type: 'unit' };
+      state.lastAction = { side: side, type: 'unit', cardId: cardId };
       addLog(state, side, state.round,
         (side === 'player' ? '你' : '对手') + '打出「' + def.name + '」到' + ROW_LABELS[def.row] +
         '（' + unitPower(state, side, unit) + '）。', 'play');
     } else {
-      applySpecial(state, side, def, o);
+      const undo = applySpecial(state, side, def, o);
       s.lastPlayed = { cardId: cardId, faction: def.faction, type: 'special' };
+      state.lastAction = {
+        side: side,
+        type: 'special',
+        cardId: cardId,
+        negatable: !!def.negatable,
+        undo: undo || null
+      };
       s.discard.push(cardId);
       addLog(state, side, state.round,
         (side === 'player' ? '你' : '对手') + '使用「' + def.name + '」。', 'special');
@@ -351,48 +363,45 @@
     return { ok: true, reason: '' };
   }
 
-  function undoSpecial(state, side, record) {
+  function undoAction(state, record) {
     if (!record) return;
-    const caster = record.side;
-    const opp = other(caster);
-    if (record.kind === 'token') {
-      ROWS.forEach(function (row) {
-        const idx = state[opp].board[row].findIndex(function (u) { return u.uid === record.tokenUid; });
-        if (idx !== -1) state[opp].board[row].splice(idx, 1);
-      });
-    } else if (record.kind === 'revive') {
-      ROWS.forEach(function (row) {
-        const idx = state[caster].board[row].findIndex(function (u) { return u.uid === record.uid; });
-        if (idx !== -1) {
-          state[caster].board[row].splice(idx, 1);
-          state[caster].discard.push(record.revivedId);
-        }
-      });
-    } else if (record.kind === 'withdraw') {
-      const handIdx = state[caster].hand.lastIndexOf(record.unitId);
-      if (handIdx !== -1) {
-        state[caster].hand.splice(handIdx, 1);
-        state[caster].board[record.row].push({ uid: state.uid++, id: record.unitId, row: record.row });
+    if (record.kind === 'spawn') {
+      const owner = state[record.side];
+      if (owner && owner.board[record.row]) {
+        const idx = owner.board[record.row].findIndex(function (u) { return u.uid === record.uid; });
+        if (idx !== -1) owner.board[record.row].splice(idx, 1);
       }
     } else if (record.kind === 'destroy') {
-      const discardIdx = state[opp].discard.lastIndexOf(record.destroyedId);
-      if (discardIdx !== -1) {
-        state[opp].discard.splice(discardIdx, 1);
-        state[opp].board[record.row].push({ uid: state.uid++, id: record.destroyedId, row: record.row });
+      const owner = state[record.side];
+      if (owner && owner.board[record.row]) {
+        owner.board[record.row].push(record.unit);
+        const discardIdx = owner.discard.lastIndexOf(record.unit.id);
+        if (discardIdx !== -1) owner.discard.splice(discardIdx, 1);
       }
     } else if (record.kind === 'aura') {
-      state[caster].aura = Math.max(0, state[caster].aura - record.amount);
-    } else if (record.kind === 'clarify') {
-      if (!state.effects[record.row]) state.effects[record.row] = record.oldEffect || null;
-    } else if (record.kind === 'paradox') {
-      state.effects[record.row] = record.oldEffect || null;
-    } else if (record.kind === 'axiom') {
+      state[record.side].aura = Math.max(0, state[record.side].aura - record.amount);
+    } else if (record.kind === 'effect') {
+      state.effects[record.row] = record.previousEffect || null;
+    } else if (record.kind === 'axiomatize') {
       ROWS.forEach(function (row) {
-        state[caster].board[row].forEach(function (unit) {
+        state[record.side].board[row].forEach(function (unit) {
           if (unit.uid === record.uid) unit.axiomized = false;
         });
       });
+    } else if (record.kind === 'withdraw') {
+      const handIdx = state[record.side].hand.lastIndexOf(record.unit.id);
+      if (handIdx !== -1) {
+        state[record.side].hand.splice(handIdx, 1);
+        state[record.side].board[record.row].push(record.unit);
+      }
+    } else if (record.kind === 'revive') {
+      const idx = state[record.side].board[record.row].findIndex(function (u) { return u.uid === record.uid; });
+      if (idx !== -1) {
+        state[record.side].board[record.row].splice(idx, 1);
+        state[record.side].discard.push(record.id);
+      }
     }
+    /* draw 这种资源变化不做回滚：否定规则只覆盖可撤销的场面效果。 */
   }
 
   function applySpecial(state, side, def, opts) {
@@ -405,8 +414,9 @@
         addLog(state, side, state.round,
           (side === 'player' ? '你' : '对手') + '抽了 ' + drawn.length + ' 张牌。', 'draw');
       }
-      state.lastSpecial = { side: side, cardId: def.id, kind: 'token', tokenUid: token.uid };
-    } else if (def.ability === 'citation') {
+      return { kind: 'spawn', side: opp, row: opts.row, uid: token.uid };
+    }
+    if (def.ability === 'citation') {
       const idx = opts.discardIndex;
       const id = state[side].discard[idx];
       const d = DATA.CARD_MAP[id];
@@ -415,48 +425,58 @@
       state[side].board[d.row].push(unit);
       addLog(state, side, state.round,
         (side === 'player' ? '你' : '对手') + '引证「' + d.name + '」回到' + ROW_LABELS[d.row] + '。', 'revive');
-      state.lastSpecial = { side: side, cardId: def.id, kind: 'revive', uid: unit.uid, revivedId: id, row: d.row };
-    } else if (def.ability === 'withdraw') {
+      return { kind: 'revive', side: side, row: d.row, uid: unit.uid, id: id };
+    }
+    if (def.ability === 'withdraw') {
       const found = findUnit(state, side, opts.unitUid);
-      const idx = state[side].board[found.row].findIndex(function (u) { return u.uid === found.unit.uid; });
-      const target = DATA.CARD_MAP[found.unit.id];
-      state[side].board[found.row].splice(idx, 1);
+      const list = state[side].board[found.row];
+      const idx = list.findIndex(function (u) { return u.uid === found.unit.uid; });
+      const original = {
+        uid: found.unit.uid,
+        id: found.unit.id,
+        row: found.row,
+        deduced: !!found.unit.deduced,
+        axiomized: !!found.unit.axiomized
+      };
+      list.splice(idx, 1);
       state[side].hand.push(found.unit.id);
       addLog(state, side, state.round,
-        (side === 'player' ? '你' : '对手') + '撤回「' + target.name + '」回到手牌。', 'withdraw');
-      state.lastSpecial = {
-        side: side, cardId: def.id, kind: 'withdraw',
-        unitId: found.unit.id, row: found.row
-      };
-    } else if (def.ability === 'reductio') {
+        (side === 'player' ? '你' : '对手') + '撤回「' + DATA.CARD_MAP[found.unit.id].name + '」回到手牌。', 'withdraw');
+      return { kind: 'withdraw', side: side, row: found.row, unit: original };
+    }
+    if (def.ability === 'reductio') {
       const target = highestOpponentUnit(state, side);
       const list = state[opp].board[target.row];
       const idx = list.findIndex(function (u) { return u.uid === target.unit.uid; });
       const removed = list.splice(idx, 1)[0];
+      const original = {
+        uid: removed.uid,
+        id: removed.id,
+        row: target.row,
+        deduced: !!removed.deduced,
+        axiomized: !!removed.axiomized
+      };
       state[opp].discard.push(removed.id);
       addLog(state, side, state.round,
         (side === 'player' ? '你' : '对手') + '用反证法摧毁了「' +
         DATA.CARD_MAP[removed.id].name + '」（' + target.power + '）。', 'destroy');
-      state.lastSpecial = {
-        side: side, cardId: def.id, kind: 'destroy',
-        destroyedId: removed.id, row: target.row
-      };
-    } else if (def.ability === 'consensus') {
+      return { kind: 'destroy', side: opp, row: target.row, unit: original };
+    }
+    if (def.ability === 'consensus') {
       const amount = def.aura != null ? def.aura : 2;
       state[side].aura += amount;
       addLog(state, side, state.round,
         (side === 'player' ? '你' : '对手') + '让己方单位 +' + amount + '。', 'buff');
-      state.lastSpecial = { side: side, cardId: def.id, kind: 'aura', amount: amount };
-    } else if (def.ability === 'clarify') {
+      return { kind: 'aura', side: side, amount: amount };
+    }
+    if (def.ability === 'clarify') {
       const old = state.effects[opts.row];
       state.effects[opts.row] = null;
       addLog(state, side, state.round,
         '公理澄清解除了' + ROW_LABELS[opts.row] + '上的「' + (old ? old.name : '悖论') + '」。', 'clarify');
-      state.lastSpecial = {
-        side: side, cardId: def.id, kind: 'clarify',
-        row: opts.row, oldEffect: old || null
-      };
-    } else if (def.ability === 'paradox') {
+      return { kind: 'effect', row: opts.row, previousEffect: old || null };
+    }
+    if (def.ability === 'paradox') {
       const old = state.effects[opts.row];
       state.effects[opts.row] = {
         cardId: def.id,
@@ -466,34 +486,36 @@
       };
       addLog(state, side, state.round,
         (side === 'player' ? '你' : '对手') + '让「' + def.name + '」笼罩' + ROW_LABELS[opts.row] + '。', 'paradox');
-      state.lastSpecial = {
-        side: side, cardId: def.id, kind: 'paradox',
-        row: opts.row, oldEffect: old || null
-      };
-    } else if (def.ability === 'diagonal') {
+      return { kind: 'effect', row: opts.row, previousEffect: old || null };
+    }
+    if (def.ability === 'diagonal') {
       const token = spawnUnit(state, side, 'self-reference-token', opts.row);
       addLog(state, side, state.round,
         '对角线法借对方铺场，在' + ROW_LABELS[opts.row] + '生成「自指命题」。', 'spawn');
-      state.lastSpecial = { side: side, cardId: def.id, kind: 'token', tokenUid: token.uid };
-    } else if (def.ability === 'axiomatize') {
+      return { kind: 'spawn', side: side, row: opts.row, uid: token.uid };
+    }
+    if (def.ability === 'axiomatize') {
       const found = findUnit(state, side, opts.unitUid);
       found.unit.axiomized = true;
       addLog(state, side, state.round,
         (side === 'player' ? '你' : '对手') + '公理化了「' + DATA.CARD_MAP[found.unit.id].name + '」，本小局不受悖论影响。',
         'buff');
-      state.lastSpecial = { side: side, cardId: def.id, kind: 'axiom', uid: found.unit.uid };
-    } else if (def.ability === 'draw') {
+      return { kind: 'axiomatize', side: side, uid: found.unit.uid };
+    }
+    if (def.ability === 'draw') {
       const drawn = draw(state, side, def.draw || 2);
       addLog(state, side, state.round,
         (side === 'player' ? '你' : '对手') + '抽了 ' + drawn.length + ' 张牌。', 'draw');
-      state.lastSpecial = { side: side, cardId: def.id, kind: 'draw' };
-    } else if (def.ability === 'negate') {
-      const record = state.lastSpecial;
-      undoSpecial(state, side, record);
-      addLog(state, side, state.round,
-        '逻辑否定取消了「' + (record ? DATA.CARD_MAP[record.cardId].name : '策略牌') + '」的效果。', 'negate');
-      state.lastSpecial = null;
+      return { kind: 'draw' };
     }
+    if (def.ability === 'negate') {
+      const action = state.lastAction;
+      if (action && action.undo) undoAction(state, action.undo);
+      addLog(state, side, state.round,
+        '逻辑否定取消了「' + (action ? DATA.CARD_MAP[action.cardId].name : '策略牌') + '」的效果。', 'negate');
+      return null;
+    }
+    return null;
   }
 
   function finishAction(state, side) {
@@ -515,6 +537,7 @@
     const s = state[side];
     if (s.passed) return { ok: false, reason: '本小局已经 Pass' };
     s.passed = true;
+    state.lastAction = { side: side, type: 'pass' };
     addLog(state, side, state.round, (side === 'player' ? '你' : '对手') + '选择 Pass。', 'pass');
     if (state.player.passed && state.ai.passed) {
       resolveRound(state);
@@ -605,7 +628,7 @@
       state[side].lastPlayed = null;
     });
     state.effects = { axiom: null, reasoning: null, theorem: null };
-    state.lastSpecial = null;
+    state.lastAction = null;
     state.round += 1;
     state.lastRound = null;
     state.phase = 'play';

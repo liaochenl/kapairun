@@ -40,7 +40,7 @@
       claimedRewards: {},
       unlockedFactions: { geometry: true, logic: false },
       unlockedChapters: { 1: true, 2: false },
-      shop: { inventory: [], seed: 0, refreshCount: 0 },
+      shop: { inventory: [], seed: 0, refreshCount: 0, freeRefreshes: 0 },
       settings: { sound: true, animations: true }
     };
   }
@@ -110,6 +110,7 @@
     if (!check.ok) return check;
     const deck = getDeck(profile, deckId) || activeDeck(profile);
     deck.cards.push(cardId);
+    if (deck.cards.length >= DECK_SIZE) deck.needsRepair = false;
     return { ok: true, reason: '' };
   }
 
@@ -120,6 +121,33 @@
     if (idx === -1) return { ok: false, reason: '牌组里没有这张牌' };
     deck.cards.splice(idx, 1);
     return { ok: true, reason: '' };
+  }
+
+  function repairDeck(profile, deck) {
+    if (!deck || !Array.isArray(deck.cards)) return { added: 0, needsRepair: true };
+    const counts = deckCounts(deck);
+    const candidates = DATA.CARDS.filter(function (def) {
+      if (!def.collectible) return false;
+      if (!canUseInDeck(profile, def.id, deck.faction)) return false;
+      const have = owned(profile, def.id);
+      const inDeck = counts[def.id] || 0;
+      return inDeck < have && inDeck < DATA.maxCopies(def.id);
+    }).sort(function (a, b) {
+      const af = a.faction === deck.faction ? 0 : 1;
+      const bf = b.faction === deck.faction ? 0 : 1;
+      if (af !== bf) return af - bf;
+      const tier = { basic: 0, advanced: 1, special: 2, master: 3 };
+      return (tier[a.shopTier] || 0) - (tier[b.shopTier] || 0);
+    });
+    let added = 0;
+    for (let i = 0; i < candidates.length && deck.cards.length < DECK_SIZE; i++) {
+      const id = candidates[i].id;
+      deck.cards.push(id);
+      counts[id] = (counts[id] || 0) + 1;
+      added++;
+    }
+    deck.needsRepair = deck.cards.length < DECK_SIZE;
+    return { added: added, needsRepair: deck.needsRepair };
   }
 
   function validateDeck(profile, deckOrId) {
@@ -149,8 +177,13 @@
     return { ok: errors.length === 0, errors: errors, count: deck.cards.length, deck: deck };
   }
 
+  function currentDeckLimit(profile) {
+    return profile.unlockedFactions && profile.unlockedFactions.logic ? 3 : 2;
+  }
+
   function createDeck(profile, options) {
-    if (profile.decks.length >= MAX_DECKS) return { ok: false, reason: '最多保存 ' + MAX_DECKS + ' 套牌' };
+    const limit = currentDeckLimit(profile);
+    if (profile.decks.length >= limit) return { ok: false, reason: '最多保存 ' + limit + ' 套牌' };
     const faction = options && options.faction === 'logic' ? 'logic' : 'geometry';
     if (!profile.unlockedFactions[faction]) return { ok: false, reason: '该学派尚未解锁' };
     let n = 1;
@@ -217,14 +250,18 @@
       ensureCollectionCount(profile, id, counts[id]);
     });
     let deckAdded = false;
-    if (!profile.decks.some(function (d) { return d.faction === 'logic'; }) && profile.decks.length < MAX_DECKS) {
+    const existing = profile.decks.find(function (d) { return d.faction === 'logic'; });
+    if (existing) {
+      if (!existing.cards.length) existing.cards = DATA.LOGIC_STARTER_DECK.slice();
+    } else {
       let n = 1;
       while (getDeck(profile, 'deck-' + n)) n++;
       profile.decks.push({
         id: 'deck-' + n,
         name: '逻辑与集合',
         faction: 'logic',
-        cards: DATA.LOGIC_STARTER_DECK.slice()
+        cards: DATA.LOGIC_STARTER_DECK.slice(),
+        system: true
       });
       deckAdded = true;
     }
@@ -260,8 +297,14 @@
     profile.clearedStages[stageId] = true;
     const gold = firstClear ? (stage.goldFirst || 0) : (stage.goldRepeat || 0);
     profile.gold += gold;
+    const beforeFree = (profile.shop && profile.shop.freeRefreshes) || 0;
+    if (!profile.shop) profile.shop = { inventory: [], seed: 0, refreshCount: 0, freeRefreshes: 0 };
+    profile.shop.freeRefreshes = Math.min(3, beforeFree + 1);
     if (stageId === '1-10') unlockLogic(profile);
-    return { ok: true, reason: '', firstClear: firstClear, gold: gold };
+    return {
+      ok: true, reason: '', firstClear: firstClear, gold: gold,
+      freeRefresh: profile.shop.freeRefreshes > beforeFree
+    };
   }
 
   function markCleared(profile, stageId) {
@@ -364,7 +407,7 @@
   function sanitizeDecks(profile) {
     const decks = [];
     const rawDecks = Array.isArray(profile.decks) ? profile.decks : [];
-    rawDecks.slice(0, MAX_DECKS).forEach(function (raw, i) {
+    rawDecks.slice(0, MAX_DECKS + 1).forEach(function (raw, i) {
       if (!raw || typeof raw !== 'object') return;
       const faction = raw.faction === 'logic' ? 'logic' : 'geometry';
       const counts = {};
@@ -383,7 +426,8 @@
         id: raw.id || ('deck-' + (i + 1)),
         name: String(raw.name || ('牌组 ' + (i + 1))).slice(0, 16),
         faction: faction,
-        cards: cards
+        cards: cards,
+        system: !!raw.system
       });
     });
     if (!decks.length) {
@@ -403,7 +447,8 @@
     p.version = VERSION;
 
     /* V2 第一阶段旧档案：deck -> decks[0] */
-    if (Array.isArray(p.deck) && !Array.isArray(p.decks)) {
+    const hadLegacyDeck = Array.isArray(p.deck) && !Array.isArray(p.decks);
+    if (hadLegacyDeck) {
       p.decks = [{ id: 'deck-1', name: '几何基础', faction: 'geometry', cards: p.deck.slice() }];
       p.activeDeckId = 'deck-1';
     }
@@ -453,8 +498,9 @@
     p.unlockedChapters[1] = true;
     p.unlockedChapters[2] = !!p.unlockedChapters[2];
 
-    if (!p.shop || typeof p.shop !== 'object') p.shop = { inventory: [], seed: 0, refreshCount: 0 };
+    if (!p.shop || typeof p.shop !== 'object') p.shop = { inventory: [], seed: 0, refreshCount: 0, freeRefreshes: 0 };
     if (!Array.isArray(p.shop.inventory)) p.shop.inventory = [];
+    p.shop.freeRefreshes = Math.max(0, Math.min(3, Math.floor(Number(p.shop.freeRefreshes) || 0)));
     p.shop.inventory = p.shop.inventory.filter(function (slot) {
       return slot && typeof slot === 'object' && !!DATA.CARD_MAP[slot.cardId];
     }).slice(0, 6);
@@ -462,6 +508,7 @@
     p.shop.refreshCount = Math.max(0, Math.floor(Number(p.shop.refreshCount) || 0));
 
     sanitizeDecks(p);
+    if (hadLegacyDeck) p.decks.forEach(function (deck) { repairDeck(p, deck); });
 
     if (!p.settings || typeof p.settings !== 'object') p.settings = { sound: true, animations: true };
     if (typeof p.settings.sound !== 'boolean') p.settings.sound = true;
@@ -510,6 +557,7 @@
     DECK_SIZE: DECK_SIZE,
     MAX_DECKS: MAX_DECKS,
     START_GOLD: START_GOLD,
+    currentDeckLimit: currentDeckLimit,
     defaultProfile: defaultProfile,
     ensureProfile: ensureProfile,
     owned: owned,
@@ -521,6 +569,7 @@
     canAdd: canAdd,
     addCard: addCard,
     removeCard: removeCard,
+    repairDeck: repairDeck,
     validateDeck: validateDeck,
     createDeck: createDeck,
     deleteDeck: deleteDeck,
