@@ -2,7 +2,7 @@
   "name": "truth-academy",
   "version": "0.1.0",
   "private": true,
-  "description": "《真理学院》——数学主题收集养成抽卡 Demo",
+  "description": "《真理学院》V2——数学主题经典昆特牌核心版",
   "scripts": {
     "test": "node --test test/engine.test.js",
     "sim": "node test/sim.js",

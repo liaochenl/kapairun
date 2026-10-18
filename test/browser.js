@@ -1,26 +1,58 @@
 'use strict';
-/* 浏览器端自动验收：用 CDP 点击真实 UI，抓取截图与控制台错误。 */
+/* 浏览器端自动验收（V2）：用真实 Chrome 走完 1-1 的完整 UI 闭环。
+   - 主页 → 课程 → 1-1 → 换牌 → 出牌 / 目标选择 → 小局结算 → 获胜 → 领奖
+   - 卡组编辑：移除一张、加入新卡
+   - 刷新后验证 V2 存档
+   运行：npm run qa */
 const { spawn } = require('node:child_process');
+const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const PORT = 9333;
-const PROFILE = '/tmp/ta-cdp-profile';
+const CDP_PORT = 9336;
+const WEB_PORT = 8123;
+const PROFILE = '/tmp/ta-v2-cdp-profile';
 const ROOT = path.resolve(__dirname, '..');
-const URL = 'file://' + ROOT + '/index.html?skipintro=1#home';
+const URL = 'http://127.0.0.1:' + WEB_PORT + '/index.html';
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.json': 'application/json'
+};
 
 const errors = [];
 let chrome;
+let webServer;
 
-function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+function startWebServer() {
+  webServer = http.createServer(function (req, res) {
+    let rel = decodeURIComponent(req.url.split('?')[0]);
+    if (rel === '/') rel = '/index.html';
+    const file = path.join(ROOT, rel);
+    if (file.indexOf(ROOT) !== 0 || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+      res.writeHead(404); res.end('not found'); return;
+    }
+    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream' });
+    fs.createReadStream(file).pipe(res);
+  });
+  return new Promise(function (resolve) {
+    webServer.listen(WEB_PORT, '127.0.0.1', resolve);
+  });
+}
 
 async function getPage() {
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 80; i++) {
     try {
-      const res = await fetch('http://127.0.0.1:' + PORT + '/json');
+      const res = await fetch('http://127.0.0.1:' + CDP_PORT + '/json');
       const list = await res.json();
-      const page = list.find(p => p.type === 'page');
+      const page = list.find(function (p) { return p.type === 'page'; });
       if (page) return page;
     } catch (e) { /* not ready */ }
     await wait(200);
@@ -29,56 +61,57 @@ async function getPage() {
 }
 
 async function main() {
+  await startWebServer();
   fs.rmSync(PROFILE, { recursive: true, force: true });
   chrome = spawn(CHROME, [
     '--headless=new', '--disable-gpu', '--no-sandbox',
-    '--remote-debugging-port=' + PORT,
+    '--remote-debugging-port=' + CDP_PORT,
     '--user-data-dir=' + PROFILE,
-    '--window-size=1280,800',
+    '--window-size=1280,860',
     '--hide-scrollbars',
     URL
   ], { stdio: 'ignore' });
 
   const page = await getPage();
   const ws = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => {
+  await new Promise(function (resolve, reject) {
     ws.onopen = resolve;
     ws.onerror = reject;
   });
 
   let seq = 0;
   const pending = new Map();
-  ws.onmessage = (event) => {
+  ws.onmessage = function (event) {
     const msg = JSON.parse(event.data);
     if (msg.id && pending.has(msg.id)) {
-      const { resolve, reject } = pending.get(msg.id);
+      const p = pending.get(msg.id);
       pending.delete(msg.id);
-      if (msg.error) reject(new Error(JSON.stringify(msg.error)));
-      else resolve(msg.result);
+      if (msg.error) p.reject(new Error(JSON.stringify(msg.error)));
+      else p.resolve(msg.result);
       return;
     }
     if (msg.method === 'Runtime.exceptionThrown') {
       errors.push('exception: ' + (msg.params.exceptionDetails.text || '') + ' ' +
-        (msg.params.exceptionDetails.exception && msg.params.exceptionDetails.exception.description || ''));
+        ((msg.params.exceptionDetails.exception && msg.params.exceptionDetails.exception.description) || ''));
     }
     if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') {
       errors.push('log: ' + msg.params.entry.text);
     }
     if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') {
-      errors.push('console: ' + msg.params.args.map(a => a.value || a.description || '').join(' '));
+      errors.push('console: ' + msg.params.args.map(function (a) { return a.value || a.description || ''; }).join(' '));
     }
   };
 
   function send(method, params) {
-    return new Promise((resolve, reject) => {
+    return new Promise(function (resolve, reject) {
       const id = ++seq;
-      pending.set(id, { resolve, reject });
-      ws.send(JSON.stringify({ id, method, params: params || {} }));
+      pending.set(id, { resolve: resolve, reject: reject });
+      ws.send(JSON.stringify({ id: id, method: method, params: params || {} }));
     });
   }
 
   async function evalJs(expression) {
-    const res = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    const res = await send('Runtime.evaluate', { expression: expression, returnByValue: true, awaitPromise: true });
     if (res.exceptionDetails) {
       throw new Error('eval failed: ' + expression + ' :: ' + JSON.stringify(res.exceptionDetails));
     }
@@ -87,205 +120,187 @@ async function main() {
 
   async function shot(name) {
     const res = await send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync('/tmp/ta-' + name + '.png', Buffer.from(res.data, 'base64'));
+    fs.writeFileSync('/tmp/ta-v2-' + name + '.png', Buffer.from(res.data, 'base64'));
+  }
+
+  async function click(selector) {
+    return evalJs('(function(){var el=document.querySelector(' + JSON.stringify(selector) + '); if(!el) return false; el.click(); return true;})()');
+  }
+
+  async function appState() {
+    return evalJs('JSON.stringify((function(){var a=TA_UI.app,m=a.match;return {screen:a.screen,modal:a.modal&&a.modal.type,phase:m&&m.phase,current:m&&m.current,round:m&&m.round,cleared:a.profile.clearedStages,collection:a.profile.collection,deckLen:a.profile.deck.length,deckHasPyth:a.profile.deck.indexOf("pythagoras")!==-1,hand:m&&m.player.hand.length,aiHand:m&&m.ai.hand.length,seals:m&&{p:m.player.seals,a:m.ai.seals},board:m&&{p:TA_BATTLE.calculateTotalScore(m,"player"),a:TA_BATTLE.calculateTotalScore(m,"ai")}};})())');
   }
 
   await send('Runtime.enable');
   await send('Page.enable');
   await send('Log.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await wait(1200);
-
-  const title = await evalJs('document.title');
-  console.log('title:', title);
-  console.log('errors after load:', await evalJs('JSON.stringify(window.__TA_ERRORS || [])'));
-
-  // 主页
-  await shot('cdp-home');
-
-  // 地图、编队、图鉴
-  await evalJs("location.hash='#map'");
-  await wait(350);
-  await shot('cdp-map');
-  console.log('map nodes:', await evalJs("document.querySelectorAll('.map-node').length"));
-
-  await evalJs("location.hash='#team'");
-  await wait(350);
-  await shot('cdp-team');
-
-  await evalJs("location.hash='#codex'");
-  await wait(350);
-  await shot('cdp-codex');
-
-  // 抽卡
-  await evalJs("location.hash='#gacha'");
-  await wait(350);
-  await shot('cdp-gacha');
-  const inspBefore = await evalJs('TA_UI.app.profile.inspiration');
-  await evalJs("document.querySelector('[data-action=\\\"pull\\\"][data-count=\\\"10\\\"]').click()");
-  await wait(900);
-  await shot('cdp-pull');
-  const afterPull = await evalJs('JSON.stringify({insp:TA_UI.app.profile.inspiration, total:TA_UI.app.profile.gacha.totalPulls, roster:Object.keys(TA_UI.app.profile.roster).length, cards:document.querySelectorAll(".pull-card").length})');
-  console.log('pull before:', inspBefore, 'after:', afterPull);
-  await evalJs("document.querySelector('[data-action=\\\"close-modal\\\"]').click()");
-  await wait(250);
-
-  // 学者详情
-  await evalJs("location.hash='#codex'; setTimeout(()=>{},0)");
-  await wait(300);
-  await evalJs("document.querySelector('[data-action=\\\"codex-tab\\\"][data-tab=\\\"scholars\\\"]').click()");
-  await wait(200);
-  await evalJs("document.querySelector('[data-action=\\\"scholar-detail\\\"][data-id=\\\"euclid\\\"]').click()");
-  await wait(300);
-  await shot('cdp-scholar');
-  await evalJs("document.querySelector('[data-action=\\\"close-modal\\\"]').click()");
-
-  // 战斗
-  await evalJs("TA_UI.startBattle('1-1', true, 6)");
-  await wait(500);
-  await shot('cdp-battle');
-  console.log('battle start:', await evalJs('JSON.stringify({turn:TA_UI.app.battle.turn, ap:TA_UI.app.battle.ap, enemies:TA_UI.app.battle.enemies.length})'));
-
-  // 欧几里得公理 → 毕达哥拉斯比例 → 勾股定理
-  await evalJs("document.querySelector('[data-action=\\\"battle-scholar\\\"][data-uid=\\\"s0\\\"]').click()");
-  await wait(150);
-  await evalJs("document.querySelector('[data-action=\\\"battle-skill\\\"][data-scholar=\\\"s0\\\"][data-id=\\\"euclid_axiom\\\"]').click()");
-  await wait(350);
-  await evalJs("document.querySelector('[data-action=\\\"battle-scholar\\\"][data-uid=\\\"s1\\\"]').click()");
-  await wait(150);
-  await evalJs("document.querySelector('[data-action=\\\"battle-skill\\\"][data-scholar=\\\"s1\\\"][data-id=\\\"pyth_ratio\\\"]').click()");
-  await wait(350);
-  await shot('cdp-theorem');
-  console.log('combo:', await evalJs('JSON.stringify({combo:TA_UI.app.battle.comboCount, ap:TA_UI.app.battle.ap, theorem:TA_UI.app.battle.lastTheorem && TA_UI.app.battle.lastTheorem.name, log:TA_UI.app.battle.log.slice(-3)})'));
-
-  // 结束回合
-  await evalJs("document.querySelector('[data-action=\\\"battle-end-turn\\\"]').click()");
-  await wait(800);
-  await shot('cdp-battle-turn2');
-  console.log('after turn:', await evalJs('JSON.stringify({turn:TA_UI.app.battle.turn, ap:TA_UI.app.battle.ap, phase:TA_UI.app.battle.phase, result:TA_UI.app.battle.result})'));
-
-  // 第二回合：毕达哥拉斯再补一刀，应当结束 1-1
-  await evalJs("document.querySelector('[data-action=\\\"battle-scholar\\\"][data-uid=\\\"s1\\\"]').click()");
-  await wait(150);
-  await evalJs("document.querySelector('[data-action=\\\"battle-skill\\\"][data-scholar=\\\"s1\\\"][data-id=\\\"pyth_ratio\\\"]').click()");
-  await wait(1600);
-  await shot('cdp-result');
-  console.log('final:', await evalJs('JSON.stringify({result:TA_UI.app.battle && TA_UI.app.battle.result, stars:TA_UI.app.profile.stageStars, insp:TA_UI.app.profile.inspiration, modal:!!document.querySelector(".result-modal")})'));
-
-  await evalJs("(document.querySelector('[data-action=\\\"result-map\\\"]')||document.querySelector('[data-action=\\\"close-modal\\\"]')).click()");
-  await wait(600);
-  await shot('cdp-map-after');
-  console.log('after win map:', await evalJs('JSON.stringify({screen:TA_UI.app.screen, stars:TA_UI.app.profile.stageStars, best:TA_META.bestStage(TA_UI.app.profile)})'));
-
-  // Boss 画面
-  await evalJs("TA_UI.startBattle('1-10', true, 20)");
-  await wait(600);
-  await shot('cdp-boss');
-  console.log('boss:', await evalJs('JSON.stringify({name:TA_UI.app.battle.enemies[0].name, hp:TA_UI.app.battle.enemies[0].hp, shield:TA_UI.app.battle.enemies[0].paradoxShield, phase:TA_UI.app.battle.enemies[0].phase})'));
-
-  // 主页队伍条
-  await evalJs("location.hash='#home'");
-  await wait(400);
-  console.log('home team:', await evalJs("JSON.stringify({cards:document.querySelectorAll('.home-scholar').length, screen:TA_UI.app.screen})"));
-
-  // 地图最后一项是否在视口内
-  await evalJs("location.hash='#map'");
-  await wait(400);
-  console.log('map layout:', await evalJs("JSON.stringify((function(){var ns=document.querySelectorAll('.map-node');var last=ns[ns.length-1].getBoundingClientRect();var bi=document.querySelector('.board-inner').getBoundingClientRect();return {count:ns.length,lastBottom:Math.round(last.bottom),innerBottom:Math.round(bi.bottom)};})())"));
-
-  // 编队替换：先确保拥有笛卡尔
-  await evalJs("TA_META.grantScholar(TA_UI.app.profile,'descartes'); TA_META.saveProfile(TA_UI.app.profile); location.hash='#team'");
-  await wait(400);
-  await evalJs("document.querySelector('[data-action=\\\"pick-scholar\\\"][data-id=\\\"descartes\\\"]').click()");
-  await wait(300);
-  console.log('team replace:', await evalJs("JSON.stringify({team:TA_UI.app.profile.team, descartes:!!TA_UI.app.profile.roster.descartes})"));
-  await shot('cdp-team2');
-
-  // 图鉴标签
-  await evalJs("location.hash='#codex'");
-  await wait(300);
-  await evalJs("document.querySelector('[data-action=\\\"codex-tab\\\"][data-tab=\\\"theorems\\\"]').click()");
-  await wait(200);
-  console.log('theorem codex cards:', await evalJs("document.querySelectorAll('.codex-card').length"));
-  await shot('cdp-codex-theorems');
-  await evalJs("document.querySelector('[data-action=\\\"codex-tab\\\"][data-tab=\\\"paradoxes\\\"]').click()");
-  await wait(200);
-  console.log('paradox codex cards:', await evalJs("document.querySelectorAll('.codex-card').length"));
-
-  // 升级
-  await evalJs("document.querySelector('[data-action=\\\"codex-tab\\\"][data-tab=\\\"scholars\\\"]').click()");
-  await wait(200);
-  await evalJs("document.querySelector('[data-action=\\\"scholar-detail\\\"][data-id=\\\"euclid\\\"]').click()");
-  await wait(300);
-  const lvBefore = await evalJs('TA_UI.app.profile.roster.euclid.level');
-  const notesBefore = await evalJs('TA_UI.app.profile.notes');
-  await evalJs("document.querySelector('[data-action=\\\"upgrade\\\"][data-id=\\\"euclid\\\"][data-times=\\\"1\\\"]').click()");
-  await wait(350);
-  console.log('upgrade:', await evalJs("JSON.stringify({before:" + lvBefore + ",after:TA_UI.app.profile.roster.euclid.level,notesBefore:" + notesBefore + ",notesAfter:TA_UI.app.profile.notes,modal:!!document.querySelector('.scholar-modal')})"));
-  await shot('cdp-scholar2');
-  await evalJs("document.querySelector('[data-action=\\\"close-modal\\\"]').click()");
-
-  // 设置开关
-  await evalJs("location.hash='#settings'");
-  await wait(300);
-  const soundBefore = await evalJs('TA_UI.app.profile.settings.sound');
-  await evalJs("document.querySelector('[data-action=\\\"toggle-sound\\\"]').click()");
-  await wait(200);
-  console.log('sound toggle:', await evalJs("JSON.stringify({before:" + soundBefore + ",after:TA_UI.app.profile.settings.sound})"));
-
-  // 刷新后存档是否保留
-  await evalJs("location.hash='#home'");
-  await wait(300);
-  await evalJs('location.reload()');
-  await wait(1400);
-  console.log('after reload:', await evalJs("JSON.stringify({screen:TA_UI.app.screen, stars:TA_UI.app.profile.stageStars, descartes:!!TA_UI.app.profile.roster.descartes, sound:TA_UI.app.profile.settings.sound, team:TA_UI.app.profile.team})"));
-  await shot('cdp-reload');
-
-  // 地图/编队是否落在首屏
-  await evalJs("location.hash='#map'");
-  await wait(400);
-  console.log('map fit:', await evalJs("JSON.stringify((function(){var ns=document.querySelectorAll('.map-node');var last=ns[ns.length-1].getBoundingClientRect();var bi=document.querySelector('.board-inner').getBoundingClientRect();return {lastBottom:Math.round(last.bottom),innerBottom:Math.round(bi.bottom)};})())"));
-  await evalJs("location.hash='#team'");
-  await wait(400);
-  console.log('team fit:', await evalJs("JSON.stringify((function(){var p=document.querySelector('.team-slots');var r=p.getBoundingClientRect();var bi=document.querySelector('.board-inner').getBoundingClientRect();return {panelBottom:Math.round(r.bottom),innerBottom:Math.round(bi.bottom)};})())"));
-  await shot('cdp-team3');
-
-  // Boss 二阶段
-  await evalJs("TA_UI.startBattle('1-10', true, 22)");
-  await wait(500);
-  await evalJs("TA_UI.app.battle.enemies[0].hp = Math.ceil(TA_UI.app.battle.enemies[0].maxHp * 0.5) + 20; TA_UI.render()");
-  await wait(200);
-  await evalJs("document.querySelector('[data-action=\\\"battle-scholar\\\"][data-uid=\\\"s0\\\"]').click()");
-  await wait(100);
-  await evalJs("document.querySelector('[data-action=\\\"battle-skill\\\"][data-scholar=\\\"s0\\\"][data-id=\\\"descartes_coord\\\"]').click()");
-  await wait(700);
-  console.log('boss phase:', await evalJs("JSON.stringify({phase:TA_UI.app.battle.enemies[0].phase, shield:TA_UI.app.battle.enemies[0].paradoxShield, statuses:TA_UI.app.battle.enemies[0].statuses.map(x=>x.id)})"));
-  await shot('cdp-boss-phase2');
-
-  // 失败结算
-  await evalJs("TA_UI.startBattle('1-10', true, 1)");
-  await wait(400);
-  for (let i = 0; i < 10; i++) {
-    const done = await evalJs('!!(TA_UI.app.battle && TA_UI.app.battle.result)');
-    if (done) break;
-    await evalJs("var btn=document.querySelector('[data-action=\\\"battle-end-turn\\\"]'); if(btn) btn.click();");
-    await wait(500);
-  }
+  await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 860, deviceScaleFactor: 1, mobile: false });
   await wait(1000);
-  console.log('defeat:', await evalJs("JSON.stringify({result:TA_UI.app.battle && TA_UI.app.battle.result, modal:!!document.querySelector('.result-modal'), modalText:document.querySelector('.result-modal')?document.querySelector('.result-modal').innerText.slice(0,40):''})"));
-  await shot('cdp-defeat');
+
+  console.log('title:', await evalJs('document.title'));
+  console.log('loaded:', await evalJs('JSON.stringify({ui:!!window.TA_UI,data:!!window.TA_DATA,ai:!!window.TA_AI})'));
+  await shot('home');
+
+  /* 主页 → 课程 */
+  await click('[data-action="nav-stages"]');
+  await wait(350);
+  console.log('stages:', await evalJs('JSON.stringify({count:document.querySelectorAll(".stage-card").length,locked:document.querySelectorAll(".stage-card.locked").length})'));
+  await shot('stages');
+
+  /* 1-1 介绍 → 换牌 */
+  await click('[data-action="open-stage"][data-id="1-1"]');
+  await wait(250);
+  console.log('stage modal:', await evalJs('document.querySelector(".modal").innerText.slice(0,60).replace(/\\n/g," | ")'));
+  await shot('stage-modal');
+
+  await click('[data-action="begin-battle"][data-id="1-1"]');
+  await wait(350);
+  console.log('mulligan:', await evalJs('JSON.stringify({modal:TA_UI.app.modal&&TA_UI.app.modal.type,cards:document.querySelectorAll(".mull-card").length})'));
+  await shot('mulligan');
+
+  await click('.mull-card[data-index="0"]');
+  await click('.mull-card[data-index="1"]');
+  await wait(150);
+  await click('[data-action="mulligan-confirm"]');
+  await wait(450);
+  await evalJs('TA_UI.app.aiDelay=40');
+  console.log('after mulligan:', await appState());
+  await shot('battle');
+
+  /* 打出一张单位牌 */
+  const played = await evalJs('(function(){var a=TA_UI.app,m=a.match;var i=m.player.hand.findIndex(function(id){return TA_DATA.CARD_MAP[id].type==="unit";});if(i<0)return -1;var btn=document.querySelector(\'[data-action="hand-card"][data-index="\'+i+\'"]\');if(btn)btn.click();return i;})()');
+  console.log('played unit index:', played);
+  await wait(600);
+  console.log('after unit + ai:', await appState());
+  await shot('battle-mid');
+
+  /* 目标选择：注入一张撤回命题，收回场上的单位 */
+  await evalJs('TA_UI.app.match.player.hand.push("withdraw"); TA_UI.render()');
+  await wait(150);
+  const withdrew = await evalJs('(function(){var a=TA_UI.app,m=a.match;var i=m.player.hand.indexOf("withdraw");var btn=document.querySelector(\'[data-action="hand-card"][data-index="\'+i+\'"]\');if(!btn)return "no-btn";btn.click();return a.modal&&a.modal.type;})()');
+  await wait(200);
+  console.log('withdraw modal:', withdrew);
+  await shot('target');
+  await click('[data-action="target-pick"]');
+  await wait(500);
+  console.log('after withdraw:', await appState());
+
+  /* 目标选择：反例，选择对方一排 */
+  await evalJs('TA_UI.app.match.player.hand.push("counterexample"); TA_UI.render()');
+  await wait(150);
+  const counterOpened = await evalJs('(function(){var a=TA_UI.app,m=a.match;var i=m.player.hand.indexOf("counterexample");var btn=document.querySelector(\'[data-action="hand-card"][data-index="\'+i+\'"]\');if(!btn)return "no-btn";btn.click();return a.modal&&a.modal.type;})()');
+  console.log('counterexample modal:', counterOpened);
+  await wait(150);
+  await shot('target-row');
+  const beforeCounter = await evalJs('JSON.stringify({hand:TA_UI.app.match.player.hand.length,ai:TA_UI.app.match.ai.board.axiom.length})');
+  await click('[data-action="target-pick"]');
+  await wait(500);
+  console.log('after counterexample:', beforeCounter, '->', await evalJs('JSON.stringify({hand:TA_UI.app.match.player.hand.length,ai:TA_UI.app.match.ai.board.axiom.length})'));
+
+  /* 为了稳定验收结算与奖励：清空对手手牌与战场，保留真实 UI 结算流程 */
+  await evalJs('(function(){var m=TA_UI.app.match;m.ai.hand=[];m.ai.deck=[];m.ai.board={axiom:[],reasoning:[],theorem:[]};TA_UI.render();return true;})()');
+
+  /* 自动推进：每小局打到 2 张单位后 Pass */
+  let finished = false;
+  for (let i = 0; i < 120; i++) {
+    const step = await evalJs('(function(){' +
+      'var a=TA_UI.app,m=a.match;' +
+      'if(!m)return "no-match";' +
+      'if(a.modal){' +
+      '  var t=a.modal.type;' +
+      '  if(t==="round"){document.querySelector(\'[data-action="round-continue"]\').click();return "round";}' +
+      '  if(t==="reward"){document.querySelector(\'[data-action="reward-pick"]\').click();return "reward";}' +
+      '  if(t==="result"){return "result";}' +
+      '  if(t==="target"){document.querySelector(\'[data-action="target-pick"]\').click();return "target";}' +
+      '}' +
+      'if(m.phase==="matchEnd")return "matchEnd";' +
+      'if(m.phase!=="play")return "phase-"+m.phase;' +
+      'if(m.current!=="player")return "wait-ai";' +
+      'if(m.player.passed)return "passed";' +
+      'var units=0;TA_DATA.ROWS.forEach(function(r){units+=m.player.board[r].length;});' +
+      'if(units>=2){var pb=document.querySelector(\'[data-action="pass"]\');if(pb&&!pb.disabled){pb.click();return "pass";}return "pass-disabled";}' +
+      'var idx=m.player.hand.findIndex(function(id){return TA_DATA.CARD_MAP[id].type==="unit";});' +
+      'if(idx<0)return "no-units";' +
+      'var btn=document.querySelector(\'[data-action="hand-card"][data-index="\'+idx+\'"]\');' +
+      'if(!btn)return "no-btn";btn.click();return "play";' +
+      '})()');
+    if (step === 'result') { finished = true; break; }
+    if (step === 'matchEnd') {
+      await wait(150);
+      continue;
+    }
+    await wait(step === 'wait-ai' ? 60 : 130);
+  }
+  console.log('finished:', finished, 'state:', await appState());
+  if (!finished) throw new Error('自动验收未能在限定步数内结束比赛');
+  await shot('result');
+
+  const resultCheck = await evalJs('JSON.stringify({modal:TA_UI.app.modal&&TA_UI.app.modal.type,winner:TA_UI.app.match.result.winner,cleared:TA_UI.app.profile.clearedStages["1-1"],collection:TA_UI.app.profile.collection.pythagoras,gained:TA_UI.app.rewardGained&&TA_UI.app.rewardGained.id})');
+  console.log('result check:', resultCheck);
+
+  /* 返回课程，确认 1-2 解锁 */
+  await click('[data-action="battle-quit"]');
+  await wait(400);
+  console.log('stages after:', await evalJs('JSON.stringify({screen:TA_UI.app.screen,locked:document.querySelectorAll(".stage-card.locked").length,unlocked12:!document.querySelector(\'[data-action="open-stage"][data-id="1-2"]\').disabled})'));
+
+  /* 卡组编辑：移除一张，把毕达哥拉斯加入 */
+  await click('[data-action="nav-deck"]');
+  await wait(350);
+  console.log('deck before:', await evalJs('JSON.stringify({len:TA_UI.app.profile.deck.length,valid:TA_META.validateDeck(TA_UI.app.profile).ok})'));
+  await click('[data-action="deck-remove"]');
+  await wait(200);
+  console.log('deck after remove:', await evalJs('TA_UI.app.profile.deck.length'));
+  await click('[data-action="deck-add"][data-id="pythagoras"]');
+  await wait(250);
+  console.log('deck after add:', await evalJs('JSON.stringify({len:TA_UI.app.profile.deck.length,has:TA_UI.app.profile.deck.indexOf("pythagoras")!==-1,valid:TA_META.validateDeck(TA_UI.app.profile).ok})'));
+  await shot('deck');
+
+  /* 刷新后 V2 存档 */
+  await evalJs('location.reload()');
+  await wait(1200);
+  const reloaded = await evalJs('JSON.stringify({cleared:TA_UI.app.profile.clearedStages["1-1"]===true,pythagoras:TA_UI.app.profile.collection.pythagoras,deckLen:TA_UI.app.profile.deck.length,inDeck:TA_UI.app.profile.deck.indexOf("pythagoras")!==-1,key:!!localStorage.getItem("truth_academy_save_v2"),v1:!!localStorage.getItem("truth_academy_save_v1")})');
+  console.log('after reload:', reloaded);
+  await click('[data-action="nav-stages"]');
+  await wait(300);
+  await shot('stages-after');
+
+  /* 图鉴 */
+  await click('[data-action="nav-codex"]');
+  await wait(350);
+  console.log('codex:', await evalJs('JSON.stringify({cards:document.querySelectorAll(".codex-card").length,locked:document.querySelectorAll(".codex-card.locked").length})'));
+  await shot('codex');
+
+  /* 三选一奖励弹层（只做界面验收，不实际领取） */
+  await evalJs('(function(){TA_UI.app.stage=TA_DATA.STAGE_MAP["1-5"];TA_UI.app.modal={type:"reward",stageId:"1-5",cards:TA_META.rewardOptions(TA_UI.app.profile,"1-5")};TA_UI.render();return true;})()');
+  await wait(250);
+  console.log('reward choices:', await evalJs('document.querySelectorAll("[data-action=reward-pick]").length'));
+  await shot('reward');
+  await evalJs('TA_UI.app.modal=null; TA_UI.render();');
+
+  /* 移动端布局检查 */
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  await evalJs('TA_UI.beginBattle("1-1")');
+  await wait(300);
+  await click('[data-action="mulligan-confirm"]');
+  await wait(500);
+  console.log('mobile battle:', await evalJs('JSON.stringify({w:document.documentElement.clientWidth,hand:document.querySelectorAll(".hand-card").length,overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth})'));
+  await shot('mobile-battle');
+  await evalJs('TA_UI.quitBattle()');
+  await wait(200);
 
   console.log('page errors:', JSON.stringify(errors, null, 2));
   console.log('window errors:', await evalJs('JSON.stringify(window.__TA_ERRORS || [])'));
 
   ws.close();
   chrome.kill('SIGTERM');
+  webServer.close();
   await wait(300);
 }
 
-main().catch(async (err) => {
+main().catch(async function (err) {
   console.error('FAILED:', err);
   console.error('errors:', errors);
   if (chrome) chrome.kill('SIGTERM');
+  if (webServer) webServer.close();
   process.exit(1);
 });
