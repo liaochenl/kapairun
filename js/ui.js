@@ -7,6 +7,7 @@
   const BATTLE = window.TA_BATTLE;
   const AI = window.TA_AI;
   const META = window.TA_META;
+  const PLAYTEST = window.TA_PLAYTEST;
 
   const ROW_LABELS = DATA.ROW_LABELS;
   const ROW_SHORT = { axiom: '公', reasoning: '推', theorem: '定' };
@@ -24,6 +25,7 @@
     rewardGained: null,
     fixedGained: [],
     paradoxUnlocked: null,
+    playtestSession: null,
     aiDelay: 620
   };
 
@@ -142,7 +144,7 @@
       location.hash = '#stages';
       return;
     }
-    const screen = ['home', 'stages', 'deck', 'codex', 'battle'].indexOf(h) >= 0 ? h : 'home';
+    const screen = ['home', 'stages', 'deck', 'codex', 'battle', 'playtest'].indexOf(h) >= 0 ? h : 'home';
     if (screen !== 'battle') {
       clearAITimer();
       app.modal = null;
@@ -176,6 +178,7 @@
     else if (app.screen === 'deck') html = deckHTML();
     else if (app.screen === 'codex') html = codexHTML();
     else if (app.screen === 'battle') html = battleHTML();
+    else if (app.screen === 'playtest') html = playtestHTML();
     else html = homeHTML();
     el.innerHTML = html;
     document.body.classList.toggle('in-battle', app.screen === 'battle');
@@ -240,6 +243,7 @@
       '  <div class="home-foot">' +
       '    <div class="settings">' +
       '      <button class="chip-toggle ' + (p.settings.animations ? 'on' : '') + '" data-action="toggle-anim">动画 ' + (p.settings.animations ? '开' : '关') + '</button>' +
+      '      <button class="chip-toggle" data-action="nav-playtest">试玩记录' + (PLAYTEST.load().length ? ' · ' + PLAYTEST.load().length : '') + '</button>' +
       '      <button class="chip-toggle danger" data-action="reset-save">重置存档</button>' +
       '    </div>' +
       '    <p class="save-note">存档 v2 · truth_academy_save_v2</p>' +
@@ -387,6 +391,128 @@
       '    <div><h2>图鉴</h2><p>30 张卡 · 通关 1-10 解锁四种悖论</p></div>' +
       '  </header>' +
       sections +
+      '</section>';
+  }
+
+  /* ---------- 试玩记录 ---------- */
+
+  function emptyRoundStats() {
+    return { cards: 0, units: 0, specials: 0, actions: 0, passAction: null, passCards: null };
+  }
+
+  function createPlaytestSession(stage) {
+    return {
+      stageId: stage.id,
+      stageName: stage.name,
+      startedAt: Date.now(),
+      deckAtStart: app.profile.deck.slice(),
+      rounds: [],
+      current: emptyRoundStats(),
+      finished: false,
+      recordId: null
+    };
+  }
+
+  function notePlayerPlay(def) {
+    const s = app.playtestSession;
+    if (!s || s.finished || !def) return;
+    s.current.cards += 1;
+    s.current.actions += 1;
+    if (def.type === 'unit') s.current.units += 1;
+    else s.current.specials += 1;
+  }
+
+  function notePlayerPass() {
+    const s = app.playtestSession;
+    if (!s || s.finished) return;
+    if (s.current.passAction == null) {
+      s.current.actions += 1;
+      s.current.passAction = s.current.actions;
+      s.current.passCards = s.current.cards;
+    }
+  }
+
+  function captureRound() {
+    const s = app.playtestSession;
+    const m = app.match;
+    if (!s || !m || !m.lastRound) return;
+    const r = m.lastRound;
+    if (s.rounds.some(function (x) { return x.round === r.round; })) return;
+    s.rounds.push({
+      round: r.round,
+      cards: s.current.cards,
+      units: s.current.units,
+      specials: s.current.specials,
+      actions: s.current.actions,
+      passAction: s.current.passAction,
+      passCards: s.current.passCards,
+      playerScore: r.playerScore,
+      aiScore: r.aiScore,
+      winner: r.winner
+    });
+    s.current = emptyRoundStats();
+  }
+
+  function playtestHTML() {
+    const records = PLAYTEST.load();
+    const summary = PLAYTEST.summary(records, app.profile.deck);
+    const rows = records.map(function (r, i) {
+      return { record: r, changed: PLAYTEST.deckChangedFor(records, i, app.profile.deck) };
+    }).reverse();
+
+    const stats = [
+      { label: '对局', value: summary.games },
+      { label: '胜率', value: summary.games ? Math.round(summary.winRate * 100) + '%' : '—' },
+      { label: '平均小局', value: summary.games ? summary.avgRounds.toFixed(1) : '—' },
+      { label: 'R1 平均投入', value: summary.games ? summary.avgR1Cards.toFixed(1) + ' 张' : '—' },
+      { label: '首次 Pass', value: summary.passSamples ? summary.avgPassCards.toFixed(1) + ' 张后' : '—' },
+      { label: '换牌率', value: summary.games ? Math.round(summary.changeRate * 100) + '%' : '—' }
+    ].map(function (x) {
+      return '<div class="pt-stat"><span>' + x.label + '</span><strong>' + x.value + '</strong></div>';
+    }).join('');
+
+    const list = rows.map(function (item) {
+      const r = item.record;
+      const r1 = (r.roundStats || []).find(function (x) { return x.round === 1; });
+      const resultText = r.result === 'player' ? '胜' : r.result === 'ai' ? '负' : '平';
+      const resultClass = r.result === 'player' ? 'win' : r.result === 'ai' ? 'loss' : 'draw';
+      const passText = r1 && r1.passCards != null
+        ? r1.passCards + ' 张后 Pass'
+        : (r1 ? '未 Pass' : '—');
+      const rewardIds = [].concat(r.fixedReward || [], r.reward ? [r.reward] : []);
+      const rewards = rewardIds.map(function (id) {
+        const def = card(id);
+        return def ? def.name : id;
+      });
+      return '' +
+        '<article class="pt-row">' +
+        '  <div class="pt-main">' +
+        '    <span class="pt-badge ' + resultClass + '">' + resultText + '</span>' +
+        '    <div><strong>' + esc(r.stageId + ' ' + (r.stageName || '')) + '</strong>' +
+        '      <small>' + (r.rounds || 0) + ' 小局 · 印记 ' + (r.seals ? r.seals.player : '?') + ' : ' + (r.seals ? r.seals.ai : '?') + '</small></div>' +
+        '  </div>' +
+        '  <div class="pt-metrics">' +
+        '    <span>R1 投入 <b>' + (r1 ? r1.cards : '—') + '</b> 张</span>' +
+        '    <span>' + esc(passText) + '</span>' +
+        '    <span class="pt-deck ' + (item.changed ? 'changed' : '') + '">' + (item.changed ? '已换牌' : '未换牌') + '</span>' +
+        (rewards.length ? '<span class="pt-reward">奖励 ' + esc(rewards.join('、')) + '</span>' : '') +
+        '  </div>' +
+        '  <time>' + new Date(r.ts || Date.now()).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</time>' +
+        '</article>';
+    }).join('');
+
+    return '' +
+      '<section class="screen playtest">' +
+      '  <header class="page-head">' +
+      '    <button class="ghost" data-action="nav-home">← 学院</button>' +
+      '    <div><h2>试玩记录</h2><p>本地记录 · 只统计主动开始的对局</p></div>' +
+      (records.length ? '<button class="ghost" data-action="clear-playtest">清空记录</button>' : '') +
+      '  </header>' +
+      '  <div class="pt-summary">' + stats + '</div>' +
+      (records.length
+        ? '<div class="pt-list">' + list + '</div>' +
+          '<p class="page-note">“已换牌”按下一盘开始时的牌组比较；最后一盘按当前牌组比较。AI 自动模拟不会写入这里。</p>'
+        : '<div class="pt-empty"><p class="empty-state">还没有试玩记录。</p><p>主动点「开始对局」打一盘，这里会自动记录；AI 模拟不会写入。</p><button class="primary" data-action="nav-stages">去开一局</button></div>') +
       '</section>';
   }
 
@@ -711,6 +837,7 @@
       bossRule: stage.bossRule
     });
     app.stage = stage;
+    app.playtestSession = createPlaytestSession(stage);
     app.matchEnded = false;
     app.rewardGained = null;
     app.fixedGained = [];
@@ -850,8 +977,11 @@
 
   function playPlayer(index, opts) {
     const m = app.match;
+    const cardId = m.player.hand[index];
+    const def = card(cardId);
     const res = BATTLE.playCard(m, 'player', index, opts);
     if (!res.ok) { toast(res.reason); return; }
+    notePlayerPlay(def);
     app.modal = null;
     afterAction();
   }
@@ -860,6 +990,7 @@
     if (!canAct()) return;
     const res = BATTLE.pass(app.match, 'player');
     if (!res.ok) { toast(res.reason); return; }
+    notePlayerPass();
     app.modal = null;
     afterAction();
   }
@@ -867,6 +998,7 @@
   function afterAction() {
     const m = app.match;
     if (!m) return;
+    captureRound();
     if (m.phase === 'roundEnd') {
       app.modal = { type: 'round' };
       render();
@@ -897,6 +1029,7 @@
       if (!res.ok) {
         BATTLE.pass(cur, 'ai');
       }
+      captureRound();
       if (cur.phase === 'roundEnd') {
         app.modal = { type: 'round' };
         render();
@@ -925,6 +1058,7 @@
     app.matchEnded = true;
     const m = app.match;
     if (!m || !m.result) return;
+    captureRound();
     if (m.result.winner === 'player') {
       META.markCleared(app.profile, app.stage.id);
       const fixed = META.claimFixedRewards(app.profile, app.stage.id);
@@ -940,6 +1074,30 @@
     } else {
       app.modal = { type: 'result' };
     }
+
+    const session = app.playtestSession;
+    if (session && !session.finished) {
+      session.finished = true;
+      const record = {
+        id: 'pt-' + Date.now() + '-' + app.stage.id,
+        ts: Date.now(),
+        stageId: app.stage.id,
+        stageName: app.stage.name,
+        result: m.result.winner,
+        win: m.result.winner === 'player',
+        rounds: m.result.rounds,
+        seals: { player: m.result.playerSeals, ai: m.result.aiSeals },
+        roundStats: session.rounds.slice(),
+        deckAtStart: session.deckAtStart.slice(),
+        deckAfter: app.profile.deck.slice(),
+        durationMs: Date.now() - session.startedAt,
+        fixedReward: (app.fixedGained || []).map(function (c) { return c.id; }),
+        paradoxUnlocked: (app.paradoxUnlocked || []).slice(),
+        reward: null
+      };
+      session.recordId = record.id;
+      PLAYTEST.add(record);
+    }
     render();
   }
 
@@ -950,6 +1108,9 @@
     if (!res.ok) { toast(res.reason); return; }
     app.rewardGained = res.card;
     save();
+    if (app.playtestSession && app.playtestSession.recordId) {
+      PLAYTEST.update(app.playtestSession.recordId, { reward: cardId });
+    }
     app.modal = { type: 'result' };
     render();
   }
@@ -958,6 +1119,7 @@
     clearAITimer();
     app.match = null;
     app.stage = null;
+    app.playtestSession = null;
     app.modal = null;
     app.matchEnded = false;
     app.rewardGained = null;
@@ -978,6 +1140,14 @@
     if (action === 'nav-stages') { go('stages'); return; }
     if (action === 'nav-deck') { go('deck'); return; }
     if (action === 'nav-codex') { go('codex'); return; }
+    if (action === 'nav-playtest') { go('playtest'); return; }
+    if (action === 'clear-playtest') {
+      if (!window.confirm('清空本地试玩记录？不会影响游戏存档。')) return;
+      PLAYTEST.clear();
+      render();
+      toast('试玩记录已清空');
+      return;
+    }
 
     if (action === 'toggle-anim') {
       app.profile.settings.animations = !app.profile.settings.animations;
@@ -1069,6 +1239,7 @@
       clearAITimer();
       app.match = null;
       app.stage = null;
+      app.playtestSession = null;
       app.modal = null;
       app.matchEnded = false;
       app.rewardGained = null;

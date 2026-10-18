@@ -148,7 +148,7 @@ async function main() {
   await wait(1000);
 
   console.log('title:', await evalJs('document.title'));
-  console.log('loaded:', await evalJs('JSON.stringify({ui:!!window.TA_UI,data:!!window.TA_DATA,ai:!!window.TA_AI})'));
+  console.log('loaded:', await evalJs('JSON.stringify({ui:!!window.TA_UI,data:!!window.TA_DATA,ai:!!window.TA_AI,playtest:!!window.TA_PLAYTEST})'));
   await shot('home');
 
   /* 主页 → 课程 */
@@ -281,6 +281,14 @@ async function main() {
   await wait(350);
   console.log('codex:', await evalJs('JSON.stringify({cards:document.querySelectorAll(".codex-card").length,locked:document.querySelectorAll(".codex-card.locked").length})'));
   await shot('codex');
+
+  /* 试玩记录 */
+  await evalJs("TA_UI.go('playtest')");
+  await wait(350);
+  console.log('playtest:', await evalJs('JSON.stringify((function(){var rs=TA_PLAYTEST.load();var s=TA_PLAYTEST.summary(rs,TA_UI.app.profile.deck);var r=rs[rs.length-1];return {records:rs.length,stage:r&&r.stageId,result:r&&r.result,rounds:r&&r.rounds,r1cards:r&&r.roundStats[0]&&r.roundStats[0].cards,passCards:r&&r.roundStats[0]&&r.roundStats[0].passCards,changed:s.changed===1,games:s.games,winRate:s.winRate,text:document.querySelector(".playtest").innerText.slice(0,80)};})())'));
+  await shot('playtest');
+  await evalJs("TA_UI.go('home')");
+  await wait(250);
 
   /* 三选一奖励弹层（只做界面验收，不实际领取） */
   await evalJs('(function(){TA_UI.app.stage=TA_DATA.STAGE_MAP["1-5"];TA_UI.app.modal={type:"reward",stageId:"1-5",cards:TA_META.rewardOptions(TA_UI.app.profile,"1-5")};TA_UI.render();return true;})()');

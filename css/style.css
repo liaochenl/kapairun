@@ -854,3 +854,80 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   font-size: 11px;
   letter-spacing: 0.1em;
 }
+
+/* ---------- 试玩记录 ---------- */
+
+.playtest { max-width: 900px; margin: 0 auto; }
+
+.pt-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.pt-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(233, 227, 209, 0.03);
+}
+.pt-stat span { font-size: 10px; color: var(--chalk-faint); letter-spacing: 0.08em; }
+.pt-stat strong { font-family: var(--serif); font-size: 20px; color: var(--gold); }
+
+.pt-list { display: grid; gap: 8px; }
+.pt-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 14px;
+  align-items: center;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: linear-gradient(120deg, rgba(233, 227, 209, 0.045), rgba(233, 227, 209, 0.012));
+}
+.pt-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pt-main > div { display: flex; flex-direction: column; min-width: 0; }
+.pt-main strong { font-family: var(--serif); font-size: 15px; letter-spacing: 0.03em; }
+.pt-main small { font-size: 10.5px; color: var(--chalk-faint); }
+.pt-badge {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+}
+.pt-badge.win { color: var(--gold); border: 1px solid rgba(226, 185, 95, 0.6); background: rgba(226, 185, 95, 0.12); }
+.pt-badge.loss { color: var(--red); border: 1px solid rgba(224, 138, 122, 0.5); background: rgba(224, 138, 122, 0.1); }
+.pt-badge.draw { color: var(--chalk-dim); border: 1px solid var(--line-strong); }
+
+.pt-metrics { display: flex; flex-wrap: wrap; gap: 4px 12px; grid-column: 1 / -1; font-size: 10.5px; color: var(--chalk-dim); }
+.pt-metrics b { color: var(--chalk); font-family: var(--serif); font-size: 12px; }
+.pt-deck { color: var(--chalk-faint); }
+.pt-deck.changed { color: var(--mint); }
+.pt-reward { color: var(--gold); }
+.pt-row time { font-size: 10px; color: var(--chalk-faint); white-space: nowrap; text-align: right; }
+
+.pt-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 40px 20px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  text-align: center;
+}
+.pt-empty p { font-size: 12px; color: var(--chalk-dim); max-width: 440px; }
+.pt-empty .primary { margin-top: 10px; }
+
+@media (max-width: 760px) {
+  .pt-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pt-stat strong { font-size: 17px; }
+  .pt-row { grid-template-columns: 1fr; }
+  .pt-row time { text-align: left; }
+}

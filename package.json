@@ -4,7 +4,7 @@
   "private": true,
   "description": "《真理学院》V2——数学主题经典昆特牌核心版",
   "scripts": {
-    "test": "node --test test/engine.test.js",
+    "test": "node --test test/engine.test.js test/playtest.test.js",
     "sim": "node test/sim.js",
     "qa": "node test/browser.js",
     "serve": "python3 -m http.server 8080"

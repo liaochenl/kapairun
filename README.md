@@ -100,6 +100,14 @@ python3 -m http.server 8080
 
 Boss「自指」：第 2、3 小局开始时，随机一排自动被罗素悖论笼罩（论证力减半）。通关后四种悖论解锁，可编入牌组。
 
+### 试玩记录（本地）
+
+主页 →「试玩记录」。它不是自动对战，也不是 AI 模拟：**只有你主动点「开始对局」并实际打完一盘，才会记录一条。**
+
+记录内容包括：关卡、胜负、小局数、真理印记、第一小局投入几张、玩家第一次 Pass 前打了几张、有没有在下一盘前换牌、领取的奖励。数据写在独立的 `truth_academy_playtest_v1`，不进入 V2 游戏存档，可单独清空。
+
+![试玩记录](docs/playtest.png)
+
 ### 收藏与牌组
 
 - 收藏只记录 `卡牌 id → 数量`；普通同名上限 3，巨匠 1。
@@ -118,10 +126,12 @@ truth-academy/
 │   ├── battle.js           纯战斗引擎（Node 可测、rngState 可序列化）
 │   ├── ai.js               合法行动、连续追分模拟、Pass 判断、换牌
 │   ├── meta.js             V2 存档、收藏、牌组、解锁、奖励
+│   ├── playtest.js         本地试玩记录（独立存储，不改规则）
 │   ├── ui.js               主页 / 课程 / 卡组 / 图鉴 / 战斗
 │   └── main.js             启动
 ├── test/
 │   ├── engine.test.js      44 条规则与档案测试
+│   ├── playtest.test.js    6 条试玩记录测试
 │   ├── sim.js              AI vs AI 全章模拟
 │   └── browser.js          Chrome UI 闭环验收
 └── docs/
@@ -133,7 +143,7 @@ truth-academy/
 ## 测试
 
 ```bash
-npm test          # 44 条引擎 / AI / 存档测试
+npm test          # 50 条引擎 / AI / 存档 / 试玩记录测试
 npm run sim       # AI vs AI 跑完 1-1 ～ 1-10
 npm run qa        # Chrome 真实 UI：换牌、出牌、目标选择、结算、领奖、编辑牌组、刷新读档
 ```
