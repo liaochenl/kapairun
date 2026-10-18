@@ -142,9 +142,15 @@
     let added = 0;
     for (let i = 0; i < candidates.length && deck.cards.length < DECK_SIZE; i++) {
       const id = candidates[i].id;
-      deck.cards.push(id);
-      counts[id] = (counts[id] || 0) + 1;
-      added++;
+      while (
+        deck.cards.length < DECK_SIZE &&
+        (counts[id] || 0) < owned(profile, id) &&
+        (counts[id] || 0) < DATA.maxCopies(id)
+      ) {
+        deck.cards.push(id);
+        counts[id] = (counts[id] || 0) + 1;
+        added++;
+      }
     }
     deck.needsRepair = deck.cards.length < DECK_SIZE;
     return { added: added, needsRepair: deck.needsRepair };
@@ -177,13 +183,17 @@
     return { ok: errors.length === 0, errors: errors, count: deck.cards.length, deck: deck };
   }
 
+  function playerDeckCount(profile) {
+    return profile.decks.filter(function (deck) { return !deck.system; }).length;
+  }
+
   function currentDeckLimit(profile) {
     return profile.unlockedFactions && profile.unlockedFactions.logic ? 3 : 2;
   }
 
   function createDeck(profile, options) {
     const limit = currentDeckLimit(profile);
-    if (profile.decks.length >= limit) return { ok: false, reason: '最多保存 ' + limit + ' 套牌' };
+    if (playerDeckCount(profile) >= limit) return { ok: false, reason: '最多保存 ' + limit + ' 套自建牌组' };
     const faction = options && options.faction === 'logic' ? 'logic' : 'geometry';
     if (!profile.unlockedFactions[faction]) return { ok: false, reason: '该学派尚未解锁' };
     let n = 1;
@@ -200,6 +210,9 @@
   }
 
   function deleteDeck(profile, deckId) {
+    const deck = getDeck(profile, deckId);
+    if (!deck) return { ok: false, reason: '牌组不存在' };
+    if (deck.system) return { ok: false, reason: '系统赠送牌组不能删除' };
     if (profile.decks.length <= 1) return { ok: false, reason: '至少保留一套牌组' };
     const idx = profile.decks.findIndex(function (d) { return d.id === deckId; });
     if (idx === -1) return { ok: false, reason: '牌组不存在' };
@@ -558,6 +571,7 @@
     MAX_DECKS: MAX_DECKS,
     START_GOLD: START_GOLD,
     currentDeckLimit: currentDeckLimit,
+    playerDeckCount: playerDeckCount,
     defaultProfile: defaultProfile,
     ensureProfile: ensureProfile,
     owned: owned,

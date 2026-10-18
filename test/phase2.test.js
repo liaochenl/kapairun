@@ -132,6 +132,55 @@ test('逻辑未解锁时最多 2 套，解锁后 3 套', function () {
   assert.strictEqual(META.createDeck(p, { name: 'D', faction: 'geometry' }).ok, false);
 });
 
+test('系统牌组不计入玩家牌组上限，且不能删除', function () {
+  const p = META.defaultProfile();
+  p.unlockedFactions.logic = true;
+  p.unlockedChapters[2] = true;
+  p.decks.push({ id: 'deck-sys', name: '系统逻辑', faction: 'logic', cards: [], system: true });
+  assert.strictEqual(META.playerDeckCount(p), 1);
+  assert.strictEqual(META.createDeck(p, { name: 'B', faction: 'geometry' }).ok, true);
+  assert.strictEqual(META.createDeck(p, { name: 'C', faction: 'geometry' }).ok, true);
+  assert.strictEqual(META.playerDeckCount(p), 3);
+  assert.strictEqual(META.createDeck(p, { name: 'D', faction: 'geometry' }).ok, false);
+  assert.strictEqual(META.deleteDeck(p, 'deck-sys').ok, false);
+  assert.strictEqual(META.deleteDeck(p, 'deck-1').ok, true);
+});
+
+test('系统逻辑牌组保存读取后不会重复生成', function () {
+  const p = META.defaultProfile();
+  META.completeStage(p, '1-10');
+  const logicDecks = function (profile) {
+    return profile.decks.filter(function (d) { return d.faction === 'logic'; }).length;
+  };
+  assert.strictEqual(logicDecks(p), 1);
+  const mem = memStorage();
+  META.saveProfile(p, mem);
+  const loaded = META.loadProfile(mem);
+  assert.strictEqual(logicDecks(loaded), 1);
+});
+
+test('repairDeck 会从同一张牌补多张直到 25', function () {
+  const p = META.defaultProfile();
+  p.collection = { 'euclid-apprentice': 3, triangle: 2 };
+  const deck = { id: 'd', name: '残缺', faction: 'geometry', cards: ['euclid-apprentice', 'triangle'] };
+  const res = META.repairDeck(p, deck);
+  assert.strictEqual(deck.cards.length, 5);
+  assert.strictEqual(res.needsRepair, true);
+  const p2 = META.defaultProfile();
+  const deck2 = { id: 'd2', name: '缺四', faction: 'geometry', cards: DATA.STARTER_DECK.slice(0, 21) };
+  const res2 = META.repairDeck(p2, deck2);
+  assert.strictEqual(res2.added, 4);
+  assert.strictEqual(deck2.cards.length, 25);
+  assert.strictEqual(res2.needsRepair, false);
+});
+
+test('逻辑否定文字与教学文字反映“上一动作 / 可否定”', function () {
+  assert.ok(DATA.CARD_MAP['logical-negation'].text.indexOf('上一动作') !== -1);
+  assert.ok(DATA.CARD_MAP['logical-negation'].text.indexOf('可否定') !== -1);
+  assert.ok(DATA.STAGE_MAP['2-3'].lesson.indexOf('上一动作') !== -1);
+  assert.ok(DATA.STAGE_MAP['2-3'].tip.indexOf('可否定') !== -1);
+});
+
 test('已有 3 套几何旧档，通关 1-10 仍会赠送系统逻辑套牌', function () {
   const p = META.defaultProfile();
   p.decks.push(

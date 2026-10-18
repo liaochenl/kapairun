@@ -1107,3 +1107,265 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   .faction-pick { grid-template-columns: 1fr; }
   .card-detail-head { align-items: flex-start; }
 }
+
+/* =========================================================
+   第三轮：第二阶段封版视觉
+   ========================================================= */
+
+:root {
+  --wood: #2a2118;
+  --wood-line: rgba(226, 185, 95, 0.22);
+  --geometry: #7fc8a9;
+  --logic: #b49ae8;
+  --neutral: #cfc7ac;
+  --danger: #e08a7a;
+  --panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 0 0 1px rgba(226, 185, 95, 0.05), 0 14px 34px rgba(0, 0, 0, 0.22);
+}
+
+body {
+  background:
+    radial-gradient(820px 620px at 50% 10%, rgba(72, 104, 84, 0.30), transparent 64%),
+    radial-gradient(1200px 700px at 50% -15%, rgba(226, 185, 95, 0.10), transparent 55%),
+    linear-gradient(180deg, #16291f 0%, #101f19 52%, #0a1410 100%);
+}
+
+.page-kicker {
+  font-size: 9px;
+  letter-spacing: 0.34em;
+  color: var(--gold);
+  opacity: 0.9;
+  margin-bottom: 2px;
+}
+.page-head { align-items: flex-start; }
+.page-head h2 { position: relative; padding-bottom: 6px; }
+.page-head h2::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 34px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+}
+
+.menu-btn, .stage-card, .own-card, .deck-summary, .owned-panel, .shop-slot,
+.codex-card, .pt-stat, .pt-row, .modal {
+  box-shadow: var(--panel-shadow);
+}
+
+/* 章节色 */
+.chapter-block.chapter-1 .chapter-head { border-left: 3px solid var(--geometry); padding-left: 12px; }
+.chapter-block.chapter-2 .chapter-head { border-left: 3px solid var(--logic); padding-left: 12px; }
+.stage-card.current { border-color: rgba(226, 185, 95, 0.4); background: rgba(226, 185, 95, 0.045); }
+.stage-card.boss { border-left: 3px solid var(--gold); }
+.stage-card.boss .stage-state { color: var(--gold); }
+.stage-card.cleared .stage-state { color: var(--geometry); }
+
+/* 卡牌：手牌 */
+.hand-card {
+  position: relative;
+  flex: 0 0 112px;
+  min-height: 146px;
+  justify-content: flex-start;
+  gap: 5px;
+  padding: 9px 9px 8px;
+  border-left-width: 3px;
+  overflow: hidden;
+}
+.hand-card.faction-geometry { border-left-color: var(--geometry); }
+.hand-card.faction-logic { border-left-color: var(--logic); }
+.hand-card.faction-neutral { border-left-color: var(--neutral); }
+.hand-card.master {
+  border-color: rgba(226, 185, 95, 0.75);
+  box-shadow: 0 0 18px rgba(226, 185, 95, 0.13), inset 0 0 22px rgba(226, 185, 95, 0.05);
+}
+.hand-card.master .hc-name { color: var(--gold); }
+.hc-top { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.hc-faction { font-family: var(--serif); font-size: 14px; color: var(--chalk-faint); }
+.hand-card.faction-geometry .hc-faction { color: var(--geometry); }
+.hand-card.faction-logic .hc-faction { color: var(--logic); }
+.hc-power { font-family: var(--serif); font-size: 21px; line-height: 1; color: var(--gold); }
+.hand-card.type-special .hc-power, .hand-card.type-paradox .hc-power { font-size: 18px; color: var(--chalk-dim); }
+.hc-name { font-family: var(--serif); font-size: 14px; line-height: 1.25; letter-spacing: 0.03em; margin-top: 1px; }
+.hc-ability { font-size: 10px; color: var(--chalk-faint); min-height: 14px; }
+.hc-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(233, 227, 209, 0.13);
+  font-size: 9px;
+  color: var(--chalk-faint);
+  letter-spacing: 0.04em;
+}
+.neg-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border: 1px solid rgba(180, 154, 232, 0.5);
+  border-radius: 4px;
+  color: var(--logic);
+  font-size: 8.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.gold-badge {
+  display: inline-flex;
+  padding: 1px 5px;
+  border: 1px solid rgba(226, 185, 95, 0.5);
+  border-radius: 4px;
+  color: var(--gold);
+  font-size: 9px;
+}
+.card-badges { display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+
+@media (hover: hover) and (min-width: 761px) {
+  .hand-card:hover:not(.disabled) { transform: translateY(-8px) scale(1.03); z-index: 3; }
+}
+
+/* 图鉴卡 */
+.codex-card { border-left: 3px solid rgba(233, 227, 209, 0.12); }
+.codex-card.faction-geometry { border-left-color: var(--geometry); }
+.codex-card.faction-logic { border-left-color: var(--logic); }
+.codex-card.faction-neutral { border-left-color: var(--neutral); }
+.codex-card.master { border-color: rgba(226, 185, 95, 0.5); }
+.codex-card.unknown .cc-art {
+  color: rgba(233, 227, 209, 0.22);
+  background: repeating-linear-gradient(135deg, rgba(233, 227, 209, 0.035) 0 6px, transparent 6px 12px);
+  border-style: solid;
+  border-color: rgba(233, 227, 209, 0.08);
+}
+.codex-card.revealed { opacity: 0.68; }
+.codex-card.revealed:hover { opacity: 0.9; }
+.cc-source { display: flex; justify-content: space-between; gap: 6px; }
+
+/* 卡组 */
+.deck-tab { position: relative; overflow: hidden; }
+.deck-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--gold);
+}
+.deck-tab.faction-geometry.active::after { background: var(--geometry); }
+.deck-tab.faction-logic.active::after { background: var(--logic); }
+.system-badge {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: var(--logic);
+  border: 1px solid rgba(180, 154, 232, 0.45);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 3px;
+  vertical-align: 1px;
+}
+.deck-breakdown > div { display: grid; grid-template-columns: 1fr auto 62px; gap: 7px; align-items: center; }
+.deck-breakdown .bar { height: 4px; border-radius: 999px; background: rgba(233, 227, 209, 0.08); overflow: hidden; }
+.deck-breakdown .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--geometry), var(--gold)); border-radius: inherit; }
+.deck-tab.add { border-style: dashed; }
+
+/* 商店 */
+.shop-slot { position: relative; overflow: hidden; }
+.shop-slot.sold { opacity: 0.48; }
+.shop-slot.sold::after {
+  content: "已售出";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-size: 24px;
+  letter-spacing: 0.22em;
+  color: rgba(224, 138, 122, 0.82);
+  border: 1px solid rgba(224, 138, 122, 0.25);
+  border-radius: 9px;
+  transform: rotate(-8deg) scale(0.9);
+  pointer-events: none;
+}
+.shop-slot.sold .shop-buy { visibility: hidden; }
+.free-refresh {
+  color: var(--gold);
+  border-color: rgba(226, 185, 95, 0.65);
+  background: rgba(226, 185, 95, 0.1);
+}
+.shop-card strong { font-size: 19px; }
+
+/* 战场 */
+.row { position: relative; overflow: hidden; }
+.row::before {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--serif);
+  font-size: 28px;
+  color: rgba(233, 227, 209, 0.05);
+  pointer-events: none;
+}
+.row-axiom::before { content: "⊢"; }
+.row-reasoning::before { content: "∴"; }
+.row-theorem::before { content: "∎"; }
+.row.cursed {
+  animation: paradoxPulse 3.6s ease-in-out infinite;
+  background: linear-gradient(90deg, rgba(112, 62, 96, 0.13), rgba(224, 138, 122, 0.05));
+}
+@keyframes paradoxPulse {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(180, 154, 232, 0.12); }
+  50% { box-shadow: inset 0 0 18px rgba(180, 154, 232, 0.14); }
+}
+.unit.faction-geometry { border-left: 2px solid var(--geometry); }
+.unit.faction-logic { border-left: 2px solid var(--logic); }
+.unit.faction-neutral { border-left: 2px solid var(--neutral); }
+.pass-tag {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+  border: 1px solid rgba(226, 185, 95, 0.4);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.ts-end.ahead .ts-num { color: var(--gold); text-shadow: 0 0 16px rgba(226, 185, 95, 0.4); }
+.side.ai .ts-end.ahead .ts-num { color: var(--gold); }
+.seal { transition: opacity 0.25s ease, transform 0.25s ease; }
+.seal.off { opacity: 0.55; }
+.pass-btn { position: relative; overflow: hidden; }
+.pass-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent, rgba(226, 185, 95, 0.08), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.5s ease;
+}
+.pass-btn:hover:not(:disabled)::after { transform: translateX(100%); }
+
+/* Modal 统一 */
+.modal {
+  border-color: var(--wood-line);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(233, 227, 209, 0.03);
+}
+.modal-head { border-bottom: 1px solid rgba(233, 227, 209, 0.09); padding-bottom: 10px; }
+.modal-actions { border-top: 1px solid rgba(233, 227, 209, 0.09); padding-top: 12px; }
+
+/* 移动端：关闭位移动画 */
+@media (max-width: 760px) {
+  .hand-card:hover:not(.disabled) { transform: none; }
+  .row::before { font-size: 20px; right: 8px; }
+  .hc-name { font-size: 13px; }
+  .deck-tab.active::after { display: none; }
+  .deck-tab.active { border-color: var(--gold); }
+}
+
+/* 手牌宽度：10 张在桌面端完整可见 */
+.battle { max-width: 1120px; }
+.hand-card { flex: 0 0 104px; }
+@media (max-width: 900px) {
+  .battle { max-width: 100%; }
+  .hand-card { flex-basis: 100px; }
+}

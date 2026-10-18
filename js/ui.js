@@ -127,7 +127,7 @@
   function sealsHTML(n) {
     let out = '';
     for (let i = 0; i < BATTLE.SEALS; i++) {
-      out += '<span class="seal ' + (i < n ? 'on' : 'off') + '">●</span>';
+      out += '<span class="seal ' + (i < n ? 'on' : 'off') + '">' + (i < n ? '✦' : '✧') + '</span>';
     }
     return '<span class="seals" title="真理印记">' + out + '</span>';
   }
@@ -293,7 +293,7 @@
     const gold = cleared ? stage.goldRepeat : stage.goldFirst;
     const rewardText = rewardLeft ? rewardLabel(stage) : '已领取';
     return '' +
-      '<button class="stage-card ' + (unlocked ? '' : 'locked') + (cleared ? ' cleared' : '') + '"' +
+      '<button class="stage-card ' + (unlocked ? '' : 'locked') + (cleared ? ' cleared' : '') + (stage.boss ? ' boss' : '') + (unlocked && !cleared ? ' current' : '') + '"' +
       ' data-action="open-stage" data-id="' + stage.id + '"' + (unlocked ? '' : ' disabled') + '>' +
       '  <span class="stage-index">' + stage.id + '</span>' +
       '  <span class="stage-main">' +
@@ -301,7 +301,7 @@
       '    <span class="stage-sub">' + esc(stage.subtitle) + ' · ' + esc(DATA.AI_DECKS[stage.ai].name) + '</span>' +
       '    <span class="stage-reward">金币 ' + gold + ' · ' + (rewardLeft ? '奖励 ' + esc(rewardText) : '奖励已领取') + '</span>' +
       '  </span>' +
-      '  <span class="stage-state">' + (cleared ? '已通关' : unlocked ? '可挑战' : '未解锁') + '</span>' +
+      '  <span class="stage-state">' + (cleared ? '✓ 已通关' : stage.boss && unlocked ? 'BOSS · 可挑战' : unlocked ? '可挑战' : '未解锁') + '</span>' +
       '</button>';
   }
 
@@ -312,7 +312,7 @@
         return stageCardHTML(DATA.STAGE_MAP[id]);
       }).join('');
       return '' +
-        '<section class="chapter-block ' + (locked ? 'locked' : '') + '">' +
+        '<section class="chapter-block chapter-' + chapter.id + ' ' + (locked ? 'locked' : '') + '">' +
         '  <div class="chapter-head"><div><h3>' + (chapter.id === 2 ? '第二章' : '第一章') + ' · ' + esc(chapter.name) + '</h3>' +
         '    <p>' + esc(chapter.subtitle) + (locked ? ' · 通关 1-10 解锁' : '') + '</p></div>' +
         '    <span>' + chapter.stages.filter(function (id) { return app.profile.clearedStages[id]; }).length +
@@ -324,7 +324,7 @@
       '<section class="screen stages">' +
       '  <header class="page-head">' +
       '    <button class="ghost" data-action="nav-home">← 学院</button>' +
-      '    <div><h2>课程</h2><p>两章 · 二十关 · 几何与逻辑</p></div>' +
+      '    <div><p class="page-kicker">COURSES</p><h2>课程</h2><p>两章 · 二十关 · 几何与逻辑</p></div>' +
       '    <div class="head-actions">' +
       '      <button class="ghost" data-action="nav-deck">卡组</button>' +
       '      <button class="ghost" data-action="nav-codex">图鉴</button>' +
@@ -392,17 +392,18 @@
       '<section class="screen deck-screen">' +
       '  <header class="page-head">' +
       '    <button class="ghost" data-action="nav-home">← 学院</button>' +
-      '    <div><h2>卡组</h2><p>最多 3 套 · 主阵营 + 中立 · 恰好 25 张</p></div>' +
+      '    <div><p class="page-kicker">DECK ARCHIVE</p><h2>卡组</h2><p>最多 3 套自建牌组 · 系统赠送牌组不占槽位</p></div>' +
       '    <span class="deck-total ' + (check.ok ? 'ok' : 'bad') + '">' + deck.cards.length + ' / 25</span>' +
       '  </header>' +
       '  <div class="deck-tabs">' + tabs +
-      '    <button class="deck-tab add" data-action="new-deck"' + (p.decks.length >= META.currentDeckLimit(p) ? ' disabled' : '') + '>＋ 新牌组</button>' +
+      '    <button class="deck-tab add" data-action="new-deck"' + (META.playerDeckCount(p) >= META.currentDeckLimit(p) ? ' disabled' : '') + '>＋ 新牌组</button>' +
       '  </div>' +
       '  <div class="deck-deckhead">' +
-      '    <div><strong>' + esc(deck.name) + '</strong><span>' + esc((DATA.FACTIONS[deck.faction] || {}).name || deck.faction) + '</span></div>' +
+      '    <div><strong>' + esc(deck.name) + (deck.system ? ' <em class="system-badge">系统</em>' : '') + '</strong><span>' + esc((DATA.FACTIONS[deck.faction] || {}).name || deck.faction) + '</span></div>' +
       '    <div class="head-actions">' +
       '      <button class="ghost" data-action="rename-deck">重命名</button>' +
-      '      <button class="ghost danger" data-action="delete-deck"' + (p.decks.length <= 1 ? ' disabled' : '') + '>删除</button>' +
+      '      <button class="ghost danger" data-action="delete-deck"' + (deck.system || p.decks.length <= 1 ? ' disabled' : '') +
+      (deck.system ? ' title="系统赠送牌组不能删除"' : '') + '>删除</button>' +
       '    </div>' +
       '  </div>' +
       '  <div class="deck-layout">' +
@@ -414,11 +415,11 @@
       '      <h3>当前牌组</h3>' +
       '      <div class="deck-meter"><span style="width:' + Math.min(100, deck.cards.length / 25 * 100) + '%"></span></div>' +
       '      <dl class="deck-breakdown">' +
-      '        <div><dt>公理域</dt><dd>' + rowCounts.axiom + '</dd></div>' +
-      '        <div><dt>推演域</dt><dd>' + rowCounts.reasoning + '</dd></div>' +
-      '        <div><dt>定理域</dt><dd>' + rowCounts.theorem + '</dd></div>' +
-      '        <div><dt>单位</dt><dd>' + typeCounts.unit + '</dd></div>' +
-      '        <div><dt>策略</dt><dd>' + typeCounts.special + '</dd></div>' +
+      '        <div><dt>公理域</dt><dd>' + rowCounts.axiom + '</dd><span class="bar"><i style="width:' + (rowCounts.axiom / 25 * 100) + '%"></i></span></div>' +
+      '        <div><dt>推演域</dt><dd>' + rowCounts.reasoning + '</dd><span class="bar"><i style="width:' + (rowCounts.reasoning / 25 * 100) + '%"></i></span></div>' +
+      '        <div><dt>定理域</dt><dd>' + rowCounts.theorem + '</dd><span class="bar"><i style="width:' + (rowCounts.theorem / 25 * 100) + '%"></i></span></div>' +
+      '        <div><dt>单位</dt><dd>' + typeCounts.unit + '</dd><span class="bar"><i style="width:' + (typeCounts.unit / 25 * 100) + '%"></i></span></div>' +
+      '        <div><dt>策略</dt><dd>' + typeCounts.special + '</dd><span class="bar"><i style="width:' + (typeCounts.special / 25 * 100) + '%"></i></span></div>' +
       '      </dl>' +
       (check.ok ? '<p class="deck-valid">牌组合法，可以开课。</p>'
         : '<ul class="deck-errors">' + check.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>') +
@@ -451,14 +452,14 @@
             '</article>';
         }
         return '' +
-          '<article class="codex-card ' + (have > 0 ? 'owned' : 'revealed') + ' type-' + c.type + '" data-action="card-detail" data-id="' + c.id + '" title="' + esc(cardTitle(c)) + '">' +
+          '<article class="codex-card ' + (have > 0 ? 'owned' : 'revealed') + ' faction-' + c.faction + ' type-' + c.type + (c.ability === 'master' ? ' master' : '') + '" data-action="card-detail" data-id="' + c.id + '" title="' + esc(cardTitle(c)) + '">' +
           '  <header><span class="cc-name">' + esc(c.name) + '</span>' +
           '    <span class="cc-count">' + (have > 0 ? '×' + have : '已发现') + '</span>' +
           '  </header>' +
           '  <div class="cc-art">' + esc((DATA.FACTIONS[c.faction] || {}).mark || '∴') + '</div>' +
           '  <p class="cc-meta">' + esc(cardMeta(c)) + '</p>' +
           '  <p class="cc-text">' + esc(c.text) + '</p>' +
-          '  <p class="cc-source">' + esc(sourceLabel(c)) + '</p>' +
+          '  <p class="cc-source">' + esc(sourceLabel(c)) + (c.negatable ? ' ' + negatableBadge(c) : '') + '</p>' +
           '</article>';
       }).join('');
       return '<section class="codex-group"><h3>' + g.label + '</h3><div class="codex-grid">' + cards + '</div></section>';
@@ -468,7 +469,7 @@
       '<section class="screen codex">' +
       '  <header class="page-head">' +
       '    <button class="ghost" data-action="nav-home">← 学院</button>' +
-      '    <div><h2>图鉴</h2><p>' + DATA.CARDS.length + ' 张卡 · 已发现 ' + knownCount + '</p></div>' +
+      '    <div><p class="page-kicker">CATALOGUE</p><h2>图鉴</h2><p>' + DATA.CARDS.length + ' 张卡 · 已发现 ' + knownCount + '</p></div>' +
       '  </header>' +
       sections +
       '</section>';
@@ -491,13 +492,13 @@
       const maxed = have >= DATA.maxCopies(slot.cardId);
       const disabled = slot.sold || maxed || p.gold < slot.price;
       slots.push('' +
-        '<div class="shop-slot faction-' + def.faction + ' type-' + def.type + '">' +
+        '<div class="shop-slot faction-' + def.faction + ' type-' + def.type + (slot.sold ? ' sold' : '') + '">' +
         '  <div class="shop-card" data-action="card-detail" data-id="' + def.id + '">' +
         '    <span class="sc-faction">' + esc((DATA.FACTIONS[def.faction] || {}).name || def.faction) + '</span>' +
         '    <strong>' + esc(def.name) + '</strong>' +
         '    <span class="sc-meta">' + esc(cardMeta(def)) + '</span>' +
         '    <span class="sc-text">' + esc(def.text) + '</span>' +
-        '    <span class="sc-have">已拥有 ' + have + ' / ' + DATA.maxCopies(def.id) + '</span>' +
+        '    <span class="sc-have">已拥有 ' + have + ' / ' + DATA.maxCopies(def.id) + ' ' + negatableBadge(def) + '</span>' +
         '  </div>' +
         '  <button class="shop-buy" data-action="shop-buy" data-slot="' + i + '"' + (disabled ? ' disabled' : '') + '>' +
         (slot.sold ? '已售出' : maxed ? '已满' : '购买 ' + slot.price + ' 金币') +
@@ -508,9 +509,9 @@
       '<section class="screen shop">' +
       '  <header class="page-head">' +
       '    <button class="ghost" data-action="nav-home">← 学院</button>' +
-      '    <div><h2>学术商店</h2><p>通关获得免费刷新次数 · 商店不会自动换货 · 首通奖励通关后可购买</p></div>' +
+      '    <div><p class="page-kicker">ACADEMIC SHOP</p><h2>学术商店</h2><p>通关获得免费刷新次数 · 商店不会自动换货 · 首通奖励通关后可购买</p></div>' +
       '    <div class="shop-head-right"><span class="gold-chip">金币 ' + p.gold + '</span>' +
-      '      <button class="ghost" data-action="shop-refresh"' +
+      '      <button class="ghost' + ((p.shop.freeRefreshes || 0) > 0 ? ' free-refresh' : '') + '" data-action="shop-refresh"' +
       ((p.shop.freeRefreshes || 0) > 0 || p.gold >= SHOP.REFRESH_COST ? '' : ' disabled') + '>' +
       ((p.shop.freeRefreshes || 0) > 0 ? '免费刷新 · 剩余 ' + p.shop.freeRefreshes : '刷新 · ' + SHOP.REFRESH_COST + ' 金币') +
       '</button>' +
@@ -632,7 +633,7 @@
       '<section class="screen playtest">' +
       '  <header class="page-head">' +
       '    <button class="ghost" data-action="nav-home">← 学院</button>' +
-      '    <div><h2>试玩记录</h2><p>本地记录 · 只统计主动开始的对局</p></div>' +
+      '    <div><p class="page-kicker">PLAYTEST LOG</p><h2>试玩记录</h2><p>本地记录 · 只统计主动开始的对局</p></div>' +
       (records.length ? '<button class="ghost" data-action="clear-playtest">清空记录</button>' : '') +
       '  </header>' +
       '  <div class="pt-summary">' + stats + '</div>' +
@@ -673,9 +674,9 @@
       '  </header>' +
       sidePanel('ai') +
       '  <div class="totals">' +
-      '    <div class="ts-end ai"><span class="ts-side">对手</span><span class="ts-num">' + aiScore + '</span></div>' +
+      '    <div class="ts-end ai' + (aiScore > playerScore ? ' ahead' : '') + '"><span class="ts-side">对手</span><span class="ts-num">' + aiScore + '</span></div>' +
       '    <div class="ts-label">论证力</div>' +
-      '    <div class="ts-end player"><span class="ts-num">' + playerScore + '</span><span class="ts-side">你</span></div>' +
+      '    <div class="ts-end player' + (playerScore > aiScore ? ' ahead' : '') + '"><span class="ts-num">' + playerScore + '</span><span class="ts-side">你</span></div>' +
       '  </div>' +
       sidePanel('player') +
       '  <div class="hand-zone">' +
@@ -703,6 +704,7 @@
       '    <span class="side-name">' + esc(name) + '</span>' +
       sealsHTML(st.seals) +
       (side === 'ai' ? '<span class="hand-count">手牌 ' + st.hand.length + '</span>' : '<span class="hand-count">牌库 ' + st.deck.length + '</span>') +
+      (st.passed ? '<span class="pass-tag">已 PASS</span>' : '') +
       '    <span class="side-score">' + BATTLE.calculateTotalScore(m, side) + '</span>' +
       '  </header>' +
       '  <div class="rows">' + rows.map(function (row) { return rowHTML(side, row); }).join('') + '</div>' +
@@ -719,7 +721,7 @@
       ? units.map(function (u) {
         const def = card(u.id);
         const power = BATTLE.unitPower(m, side, u);
-        const cls = ['unit'];
+        const cls = ['unit', 'faction-' + def.faction];
         if (def.token) cls.push('token');
         if (def.ability === 'master') cls.push('master');
         if (def.ability === 'bond') cls.push('bond');
@@ -733,12 +735,16 @@
       }).join('')
       : '<span class="row-empty">—</span>';
     return '' +
-      '<div class="row' + (eff ? ' cursed' : '') + '">' +
+      '<div class="row row-' + row + (eff ? ' cursed' : '') + '">' +
       '  <div class="row-label"><span class="rl-name">' + ROW_LABELS[row] + '</span>' +
       '    <span class="rl-score">' + score + '</span></div>' +
       '  <div class="row-units">' + unitHTML + '</div>' +
       (eff ? '<span class="effect-chip" title="' + esc(effectLabel(eff)) + '：该排双方单位受影响">' + esc(effectLabel(eff)) + '</span>' : '') +
       '</div>';
+  }
+
+  function negatableBadge(def) {
+    return def && def.negatable ? '<span class="neg-badge" title="可被逻辑否定">◈ 可否定</span>' : '';
   }
 
   function handHTML() {
@@ -748,16 +754,16 @@
       const def = card(id);
       if (!def) return '';
       const isUnit = def.type === 'unit';
+      const mark = (DATA.FACTIONS[def.faction] || {}).mark || '∴';
+      const power = isUnit ? def.power : (def.type === 'paradox' ? '⚠' : '∴');
       return '' +
-        '<button class="hand-card type-' + def.type + (active ? '' : ' disabled') + '"' +
+        '<button class="hand-card faction-' + def.faction + ' type-' + def.type + (def.ability === 'master' ? ' master' : '') + (active ? '' : ' disabled') + '"' +
         ' data-action="hand-card" data-index="' + index + '"' +
         ' title="' + esc(cardTitle(def)) + '"' + (active ? '' : ' disabled') + '>' +
-        '  <span class="hc-tag">' + (isUnit ? ROW_SHORT[def.row] : typeLabel(def)) + '</span>' +
+        '  <span class="hc-top"><span class="hc-faction">' + esc(mark) + '</span><span class="hc-power">' + esc(power) + '</span></span>' +
         '  <span class="hc-name">' + esc(def.name) + '</span>' +
-        '  <span class="hc-foot">' +
-        '    <span class="hc-ability">' + (isUnit ? '论证 ' + def.power : (abilityLabel(def) || typeLabel(def))) + '</span>' +
-        '    <span class="hc-ability-tag">' + (isUnit ? (abilityLabel(def) || '') : '') + '</span>' +
-        '  </span>' +
+        '  <span class="hc-ability">' + esc(isUnit ? (abilityLabel(def) || '稳定论证') : (abilityLabel(def) || typeLabel(def))) + '</span>' +
+        '  <span class="hc-bottom"><span>' + (isUnit ? ROW_LABELS[def.row] : typeLabel(def)) + '</span>' + negatableBadge(def) + '</span>' +
         '</button>';
     }).join('');
   }
@@ -951,6 +957,7 @@
       '    <p class="modal-eyebrow">' + esc(typeLabel(def)) + ' · ' + esc((DATA.FACTIONS[def.faction] || {}).name || def.faction) + '</p>' +
       '    <h2>' + esc(def.name) + '</h2>' +
       '    <p class="cc-meta">' + esc(cardMeta(def)) + (abilityLabel(def) ? ' · ' + abilityLabel(def) : '') + '</p>' +
+      '    <p class="card-badges">' + (def.ability === 'master' ? '<span class="gold-badge">巨匠</span>' : '') + negatableBadge(def) + '</p>' +
       '  </div>' +
       '</div>' +
       '<p class="modal-lesson">' + esc(def.text) + '</p>' +

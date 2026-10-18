@@ -287,11 +287,16 @@ async function main() {
   await shot('card-detail');
   await click('[data-action="modal-close"]');
   await wait(200);
+  await evalJs("TA_META.discoverCard(TA_UI.app.profile,'diagonal'); TA_UI.go('codex')");
+  await wait(300);
+  console.log('negatable badge:', await evalJs("!!document.querySelector('.codex-card[data-id=\"diagonal\"] .neg-badge')"));
+  await click('[data-action="nav-home"]');
+  await wait(200);
 
   /* 商店：购买 + 刷新 */
   await evalJs("TA_UI.go('shop')");
   await wait(350);
-  console.log('shop:', await evalJs('JSON.stringify({slots:document.querySelectorAll(".shop-slot").length,gold:TA_UI.app.profile.gold,inventory:TA_UI.app.profile.shop.inventory.length})'));
+  console.log('shop:', await evalJs('JSON.stringify({slots:document.querySelectorAll(".shop-slot").length,gold:TA_UI.app.profile.gold,inventory:TA_UI.app.profile.shop.inventory.length,refreshText:document.querySelector("[data-action=shop-refresh]").innerText})'));
   await shot('shop');
   const shopBefore = await evalJs('JSON.stringify({gold:TA_UI.app.profile.gold,owned:Object.keys(TA_UI.app.profile.collection).length})');
   await click('[data-action="shop-buy"]');
@@ -340,12 +345,16 @@ async function main() {
   /* 第一章完成 → 第二章解锁、逻辑套牌 */
   await evalJs('["1-2","1-3","1-4","1-5","1-6","1-7","1-8","1-9","1-10"].forEach(function(id){TA_META.completeStage(TA_UI.app.profile,id);}); TA_META.saveProfile(TA_UI.app.profile); TA_UI.go("stages");');
   await wait(400);
-  console.log('chapter2:', await evalJs('JSON.stringify((function(){var p=TA_UI.app.profile;var logic=p.decks.find(function(d){return d.faction==="logic";});return {logic:p.unlockedFactions.logic,ch2:p.unlockedChapters[2],unlocked21:TA_META.isStageUnlocked(p,"2-1"),decks:p.decks.length,logicDeck:logic&&logic.cards.length,logicValid:logic&&TA_META.validateDeck(p,logic).ok,gold:p.gold};})())'));
+  console.log('chapter2:', await evalJs('JSON.stringify((function(){var p=TA_UI.app.profile;var logic=p.decks.find(function(d){return d.faction==="logic";});return {logic:p.unlockedFactions.logic,ch2:p.unlockedChapters[2],unlocked21:TA_META.isStageUnlocked(p,"2-1"),decks:p.decks.length,playerDecks:TA_META.playerDeckCount(p),system:!!(logic&&logic.system),logicDeck:logic&&logic.cards.length,logicValid:logic&&TA_META.validateDeck(p,logic).ok,gold:p.gold};})())'));
   await shot('stages-ch2');
+  console.log('system delete:', await evalJs('JSON.stringify((function(){var p=TA_UI.app.profile;var logic=p.decks.find(function(d){return d.faction==="logic";});return {ok:TA_META.deleteDeck(p,logic.id).ok,reason:TA_META.deleteDeck(p,logic.id).reason};})())'));
+  console.log('third player deck:', await evalJs('JSON.stringify((function(){var p=TA_UI.app.profile;var r=TA_META.createDeck(p,{name:"第三套",faction:"geometry"});TA_META.saveProfile(p);TA_UI.go("deck");return {ok:r.ok,decks:p.decks.length,playerDecks:TA_META.playerDeckCount(p)};})())'));
+  await wait(300);
+  console.log('deck limit UI:', await evalJs('JSON.stringify({newDisabled:document.querySelector("[data-action=new-deck]").disabled})'));
 
   await evalJs('(function(){var p=TA_UI.app.profile;var logic=p.decks.find(function(d){return d.faction==="logic";});TA_META.setActiveDeck(p,logic.id);TA_META.saveProfile(p);TA_UI.go("deck");})()');
   await wait(350);
-  console.log('logic deck screen:', await evalJs('JSON.stringify({len:TA_META.activeDeck(TA_UI.app.profile).cards.length,valid:TA_META.validateDeck(TA_UI.app.profile).ok})'));
+  console.log('logic deck screen:', await evalJs('JSON.stringify({len:TA_META.activeDeck(TA_UI.app.profile).cards.length,valid:TA_META.validateDeck(TA_UI.app.profile).ok,deleteDisabled:document.querySelector("[data-action=delete-deck]").disabled})'));
   await shot('deck-logic');
 
   await evalJs('TA_UI.beginBattle("2-1")');

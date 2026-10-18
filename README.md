@@ -142,7 +142,7 @@ truth-academy/
 ├── test/
 │   ├── engine.test.js      45 条规则与档案测试
 │   ├── playtest.test.js    6 条试玩记录测试
-│   ├── phase2.test.js      35 条第二阶段测试
+│   ├── phase2.test.js      39 条第二阶段测试
 │   ├── sim.js              两学派 / 两章 AI 模拟
 │   └── browser.js          Chrome UI 闭环验收
 └── docs/
@@ -154,7 +154,7 @@ truth-academy/
 ## 测试
 
 ```bash
-npm test          # 86 条：规则 / 档案 / 试玩记录 / 商店 / 第二章
+npm test          # 90 条：规则 / 档案 / 试玩记录 / 商店 / 第二章
 npm run sim       # 几何与逻辑牌组跑两章，输出 R1 投入、Pass、剩余手牌、分差
 npm run qa        # Chrome：1-1、商店、多牌组、1-10 解锁、2-1、刷新存档
 ```

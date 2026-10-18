@@ -238,7 +238,7 @@
     special('extended-counterexample', '反例扩展', 'counterexample',
       '在对方任一排生成一张 1 点「反例」，然后抽 2 张牌。', { draw: 2 }),
     special('logical-negation', '逻辑否定', 'negate',
-      '取消对方最近打出的一张策略牌的效果。'),
+      '取消对方上一动作打出的可否定策略牌效果。抽牌类、反例、引证与逻辑否定本身不可被否定。'),
     special('diagonal', '对角线法', 'diagonal',
       '对方一排有至少 3 个单位时，在己方对应排生成一个 3 点「自指命题」。', { negatable: true }),
     special('formalization', '形式化', 'axiomatize',
@@ -833,8 +833,8 @@
     },
     {
       id: '2-3', index: 13, name: '否定之门', subtitle: '否定',
-      lesson: '逻辑否定可以取消对方最近打出的一张策略牌。看清楚再否定，别浪费。',
-      tip: '否定只对策略牌有效；对方刚打出单位时不要用。',
+      lesson: '逻辑否定可以取消对方上一动作打出的可否定策略牌。并非所有策略都能被取消。',
+      tip: '抽牌、反例和引证等资源型策略不可被否定；注意卡牌上的「可否定」标识。',
       ai: '2-3', bossRule: null,
       reward: { fixed: ['logical-negation'], choice: [] }
     },
