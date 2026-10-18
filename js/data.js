@@ -64,7 +64,7 @@
       effect: effect,
       bondId: null,
       maxCopies: 3,
-      collectible: false,
+      collectible: true,
       text: text
     };
   }
@@ -156,7 +156,7 @@
     special('clarify', '公理澄清', 'clarify',
       '解除一排的悖论效果。'),
 
-    /* ---- 悖论 ×4（第一阶段为敌方专属，不进入玩家收藏） ---- */
+    /* ---- 悖论 ×4（通关 1-10 后解锁收藏） ---- */
     paradox('russell', '罗素悖论',
       { mode: 'halve', value: 0 },
       '选择一排：双方该排单位论证力减半（最低 1）。'),

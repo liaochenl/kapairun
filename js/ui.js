@@ -22,6 +22,7 @@
     aiThinking: false,
     matchEnded: false,
     rewardGained: null,
+    paradoxUnlocked: null,
     aiDelay: 620
   };
 
@@ -72,7 +73,7 @@
     if (def.ability === 'withdraw') return '撤回';
     if (def.ability === 'reductio') return '反证';
     if (def.ability === 'clarify') return '澄清';
-    if (def.ability === 'paradox') return '悖论';
+    if (def.ability === 'paradox') return '排效果';
     return '';
   }
 
@@ -374,7 +375,7 @@
       '<section class="screen codex">' +
       '  <header class="page-head">' +
       '    <button class="ghost" data-action="nav-home">← 学院</button>' +
-      '    <div><h2>图鉴</h2><p>30 张卡 · 悖论为第一章敌方专属</p></div>' +
+      '    <div><h2>图鉴</h2><p>30 张卡 · 通关 1-10 解锁四种悖论</p></div>' +
       '  </header>' +
       sections +
       '</section>';
@@ -658,6 +659,9 @@
           ? '双方同时失去最后一枚印记，整场平局。'
           : '你的印记归零。调整牌组，或者换一种投入节奏再来一次。') + '</p>' +
       (gained ? '<div class="gained"><span>已获得</span><strong>' + esc(gained.name) + '</strong><small>' + esc(gained.text) + '</small></div>' : '') +
+      (app.paradoxUnlocked && app.paradoxUnlocked.length
+        ? '<div class="gained paradox-unlock"><span>第一章通关 · 悖论解禁</span><strong>罗素悖论 · 芝诺困境 · 不完备性危机 · 说谎者悖论</strong><small>四种悖论已进入收藏，可在卡组编辑器中使用。</small></div>'
+        : '') +
       (more && !gained ? '<p class="modal-tip">这一关还有未领取的奖励，重复挑战仍可选择。</p>' : '') +
       '<div class="modal-actions">' +
       '  <button class="ghost" data-action="battle-quit">返回课程</button>' +
@@ -692,6 +696,7 @@
     app.stage = stage;
     app.matchEnded = false;
     app.rewardGained = null;
+    app.paradoxUnlocked = null;
     app.mulliganSel = [];
     app.modal = { type: 'mulligan' };
     if (location.hash === '#battle') {
@@ -904,6 +909,7 @@
     if (!m || !m.result) return;
     if (m.result.winner === 'player') {
       META.markCleared(app.profile, app.stage.id);
+      if (app.stage.id === '1-10') app.paradoxUnlocked = META.unlockParadoxes(app.profile);
       save();
       const options = META.rewardOptions(app.profile, app.stage.id);
       if (options.length) {
@@ -935,6 +941,7 @@
     app.modal = null;
     app.matchEnded = false;
     app.rewardGained = null;
+    app.paradoxUnlocked = null;
     go('stages');
   }
 
@@ -1044,6 +1051,7 @@
       app.modal = null;
       app.matchEnded = false;
       app.rewardGained = null;
+      app.paradoxUnlocked = null;
       go('deck'); return;
     }
     if (action === 'reward-pick') { claimReward(id); return; }

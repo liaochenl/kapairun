@@ -836,3 +836,10 @@ h1, h2, h3, p, dl, dd { margin: 0; }
 }
 
 .head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; flex: 0 0 auto; }
+
+.gained.paradox-unlock {
+  border-color: rgba(224, 138, 122, 0.45);
+  border-left-color: var(--red);
+  background: rgba(224, 138, 122, 0.07);
+}
+.gained.paradox-unlock span { color: var(--red); }

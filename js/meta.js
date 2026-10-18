@@ -227,6 +227,18 @@
     return { ok: true, reason: '', card: def, count: profile.collection[cardId] };
   }
 
+  function unlockParadoxes(profile) {
+    const ids = ['russell', 'zeno', 'incompleteness', 'liar'];
+    const newly = [];
+    ids.forEach(function (id) {
+      if (owned(profile, id) > 0) return;
+      profile.collection[id] = 1;
+      if (profile.discoveredCards.indexOf(id) === -1) profile.discoveredCards.push(id);
+      newly.push(id);
+    });
+    return newly;
+  }
+
   function grantCard(profile, cardId) {
     const def = DATA.CARD_MAP[cardId];
     if (!def || !def.collectible) return { ok: false, reason: '不能获得这张牌' };
@@ -297,6 +309,7 @@
     rewardOptions: rewardOptions,
     hasReward: hasReward,
     claimReward: claimReward,
+    unlockParadoxes: unlockParadoxes,
     grantCard: grantCard,
     saveProfile: saveProfile,
     loadProfile: loadProfile,

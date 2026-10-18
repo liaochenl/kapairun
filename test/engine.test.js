@@ -341,6 +341,19 @@ test('固定奖励只能领取一次，同名数量不超过上限', function ()
   assert.strictEqual(profile.collection.pythagoras, 3);
 });
 
+test('通关 1-10 解锁四种悖论，30 张卡全部可收集', function () {
+  const profile = META.defaultProfile();
+  const collectible = DATA.CARDS.filter(function (c) { return c.collectible; });
+  assert.strictEqual(collectible.length, 30);
+  assert.strictEqual(META.owned(profile, 'russell'), 0);
+  const newly = META.unlockParadoxes(profile);
+  assert.deepStrictEqual(newly, ['russell', 'zeno', 'incompleteness', 'liar']);
+  ['russell', 'zeno', 'incompleteness', 'liar'].forEach(function (id) {
+    assert.strictEqual(META.owned(profile, id), 1);
+  });
+  assert.deepStrictEqual(META.unlockParadoxes(profile), []);
+});
+
 test('关卡顺序解锁，通关后解锁下一关', function () {
   const profile = META.defaultProfile();
   assert.strictEqual(META.isStageUnlocked(profile, '1-1'), true);
