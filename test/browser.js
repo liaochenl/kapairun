@@ -288,6 +288,24 @@ async function main() {
   await evalJs('TA_UI.quitBattle()');
   await wait(200);
 
+  /* Boss 自指：直接进入 1-10，速胜第 1 小局，检查第 2 小局的悖论排效果 */
+  await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 860, deviceScaleFactor: 1, mobile: false });
+  await evalJs('TA_UI.beginBattle("1-10")');
+  await wait(300);
+  await click('[data-action="mulligan-confirm"]');
+  await wait(400);
+  await evalJs('(function(){var a=TA_UI.app,m=a.match;a.aiDelay=40;m.ai.hand=[];m.ai.deck=[];m.player.board.axiom.push({uid:m.uid++,id:"euclid",row:"axiom"});TA_UI.render();return true;})()');
+  await click('[data-action="pass"]');
+  await wait(800);
+  if (await evalJs('TA_UI.app.modal && TA_UI.app.modal.type === "round"')) {
+    await click('[data-action="round-continue"]');
+    await wait(400);
+  }
+  console.log('boss self-reference:', await evalJs('JSON.stringify({round:TA_UI.app.match.round,effects:TA_UI.app.match.effects,chips:document.querySelectorAll(".effect-chip").length,turn:TA_UI.app.match.current})'));
+  await shot('boss');
+  await evalJs('TA_UI.quitBattle()');
+  await wait(200);
+
   console.log('page errors:', JSON.stringify(errors, null, 2));
   console.log('window errors:', await evalJs('JSON.stringify(window.__TA_ERRORS || [])'));
 
