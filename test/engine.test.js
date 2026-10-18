@@ -314,13 +314,16 @@ test('初始牌组恰好 25 张且合法', function () {
   assert.strictEqual(profile.deck.length, 25);
   const check = META.validateDeck(profile);
   assert.strictEqual(check.ok, true, check.errors.join('；'));
-  assert.strictEqual(new Set(profile.deck).size, 13);
-  assert.strictEqual(profile.deck.indexOf('counterexample'), -1);
+  assert.strictEqual(new Set(profile.deck).size, 11);
+  ['counterexample', 'withdraw', 'clarify'].forEach(function (id) {
+    assert.strictEqual(profile.deck.indexOf(id), -1);
+  });
 });
 
 test('按当前奖励表可以收齐全部 30 种卡', function () {
   const profile = META.defaultProfile();
   DATA.STAGES.forEach(function (stage) {
+    META.claimFixedRewards(profile, stage.id);
     META.rewardOptions(profile, stage.id).slice().forEach(function (id) {
       const res = META.claimReward(profile, stage.id, id);
       assert.strictEqual(res.ok, true, stage.id + ' 领取 ' + id + ' 失败');
@@ -333,27 +336,34 @@ test('按当前奖励表可以收齐全部 30 种卡', function () {
   assert.deepStrictEqual(missing, []);
 });
 
-test('三选一奖励可以重复领取剩余选项', function () {
+test('固定奖励自动发放，三选一可以重复领取剩余选项', function () {
   const profile = META.defaultProfile();
+  const fixed = META.claimFixedRewards(profile, '1-5');
+  assert.deepStrictEqual(fixed.newly.map(function (c) { return c.id; }), ['clarify']);
+  assert.strictEqual(META.owned(profile, 'clarify'), 1);
+  assert.deepStrictEqual(META.fixedRewardCards(profile, '1-5'), []);
+
   let options = META.rewardOptions(profile, '1-5');
-  assert.deepStrictEqual(options, ['counterexample', 'citation', 'limit']);
-  const first = META.claimReward(profile, '1-5', 'citation');
+  assert.deepStrictEqual(options, ['limit', 'infinity', 'descartes']);
+  const first = META.claimReward(profile, '1-5', 'limit');
   assert.strictEqual(first.ok, true);
   options = META.rewardOptions(profile, '1-5');
-  assert.deepStrictEqual(options, ['counterexample', 'limit']);
-  META.claimReward(profile, '1-5', 'counterexample');
+  assert.deepStrictEqual(options, ['infinity', 'descartes']);
+  META.claimReward(profile, '1-5', 'infinity');
   options = META.rewardOptions(profile, '1-5');
-  assert.deepStrictEqual(options, ['limit']);
-  META.claimReward(profile, '1-5', 'limit');
+  assert.deepStrictEqual(options, ['descartes']);
+  META.claimReward(profile, '1-5', 'descartes');
   assert.deepStrictEqual(META.rewardOptions(profile, '1-5'), []);
 });
 
-test('固定奖励只能领取一次，同名数量不超过上限', function () {
+test('固定奖励只能发放一次，同名数量不超过上限', function () {
   const profile = META.defaultProfile();
-  assert.deepStrictEqual(META.rewardOptions(profile, '1-1'), ['pythagoras']);
-  META.claimReward(profile, '1-1', 'pythagoras');
-  assert.deepStrictEqual(META.rewardOptions(profile, '1-1'), []);
+  assert.deepStrictEqual(META.fixedRewardCards(profile, '1-1'), ['pythagoras']);
+  const first = META.claimFixedRewards(profile, '1-1');
+  assert.strictEqual(first.count, 1);
+  assert.deepStrictEqual(META.fixedRewardCards(profile, '1-1'), []);
   assert.strictEqual(profile.collection.pythagoras, 1);
+  assert.strictEqual(META.claimFixedRewards(profile, '1-1').count, 0);
   META.grantCard(profile, 'pythagoras');
   META.grantCard(profile, 'pythagoras');
   META.grantCard(profile, 'pythagoras');
@@ -391,7 +401,7 @@ test('V2 存档能完整读回', function () {
   };
   const profile = META.defaultProfile();
   META.markCleared(profile, '1-1');
-  META.claimReward(profile, '1-1', 'pythagoras');
+  META.claimFixedRewards(profile, '1-1');
   META.addCard(profile, 'pythagoras');
   assert.strictEqual(META.saveProfile(profile, storage), true);
   const loaded = META.loadProfile(storage);
@@ -427,15 +437,84 @@ test('AI 落后太多且需要多张牌时主动让局', function () {
   assert.strictEqual(action.reason, 'cannot-catch-up');
 });
 
-test('AI 追分能力按每张实体手牌统计，不合并同名卡', function () {
+test('estimateCatchup 会按连续行动计算三张同名卡', function () {
   const state = playState([], []);
   state.current = 'ai';
   state.player.passed = true;
   state.ai.hand = ['triangle', 'triangle', 'triangle'];
-  place(state, 'player', 'parallel'); /* 6 */
-  assert.strictEqual(AI.capacity(state, 'ai'), 12);
+  const chase = AI.estimateCatchup(state, 'ai', 6);
+  assert.strictEqual(chase.catchable, true);
+  assert.strictEqual(chase.cardsNeeded, 2);
+  assert.strictEqual(chase.finalScore, 12);
+});
+
+test('estimateCatchup 能看到联动牌的第二张增益', function () {
+  const state = playState([], []);
+  state.current = 'ai';
+  state.player.passed = true;
+  state.ai.hand = ['pythagoras-disciple', 'pythagorean-theorem'];
+  const chase = AI.estimateCatchup(state, 'ai', 10);
+  assert.strictEqual(chase.catchable, true);
+  assert.strictEqual(chase.cardsNeeded, 2);
+  assert.strictEqual(chase.finalScore, 22);
+  assert.ok(['pythagoras-disciple', 'pythagorean-theorem'].indexOf(chase.sequence[0].cardId) !== -1);
+});
+
+test('estimateCatchup 能看到共证连续出牌后的增益', function () {
+  const state = playState([], []);
+  state.current = 'ai';
+  state.player.passed = true;
+  state.ai.hand = ['proportion', 'set'];
+  const chase = AI.estimateCatchup(state, 'ai', 8);
+  assert.strictEqual(chase.catchable, true);
+  assert.strictEqual(chase.cardsNeeded, 2);
+  assert.strictEqual(chase.finalScore, 13);
+});
+
+test('estimateCatchup 不受现实 current 限制，能模拟对手连续行动', function () {
+  const state = playState([], []);
+  state.current = 'ai'; /* 现实里是 AI 回合 */
+  state.player.hand = ['triangle', 'triangle', 'triangle'];
+  state.ai.hand = ['euclid-apprentice'];
+  place(state, 'ai', 'parallel'); /* AI 领先 6 */
+  const threat = AI.estimateCatchup(state, 'player', 6);
+  assert.strictEqual(threat.catchable, true);
+  assert.strictEqual(threat.cardsNeeded, 2);
+  assert.strictEqual(threat.finalScore, 12);
+});
+
+test('AI 追分时打联动路线的第一张，而不是即时最高单卡', function () {
+  const state = playState([], []);
+  state.current = 'ai';
+  state.player.passed = true;
+  state.ai.hand = ['parallel', 'pythagoras-disciple', 'pythagorean-theorem'];
+  place(state, 'player', 'parallel');
+  place(state, 'player', 'triangle');
+  place(state, 'player', 'set'); /* 6+4+4 = 14 */
   const action = AI.chooseAction(state, 'ai');
   assert.strictEqual(action.type, 'play');
+  assert.ok(['pythagoras-disciple', 'pythagorean-theorem'].indexOf(action.cardId) !== -1,
+    '应打联动组合，而不是平行公设；实际：' + action.cardId);
+});
+
+test('AI 领先时用连续模拟判断对手能否反超', function () {
+  const state = playState([], []);
+  state.current = 'ai';
+  state.ai.hand = ['euclid-apprentice'];
+  state.player.hand = ['triangle', 'triangle', 'triangle'];
+  place(state, 'ai', 'parallel'); /* 6 */
+  const action = AI.chooseAction(state, 'ai');
+  assert.strictEqual(action.type, 'play', '对手三张三角形能反超，AI 不应 Pass');
+});
+
+test('AI 领先且对手确实追不上时才 Pass', function () {
+  const state = playState([], []);
+  state.current = 'ai';
+  state.ai.hand = ['euclid-apprentice'];
+  state.player.hand = ['triangle'];
+  place(state, 'ai', 'parallel'); /* 6 */
+  const action = AI.chooseAction(state, 'ai');
+  assert.strictEqual(action.type, 'pass');
 });
 
 test('先手由种子随机决定，且同种子可复现', function () {
@@ -492,6 +571,23 @@ test('AI vs AI 能完整结束一整场比赛（无死循环）', function () {
   assert.ok(state.result.rounds <= 3);
 });
 
+test('主动机制不会在正式教学关之前出现', function () {
+  const intro = DATA.MECHANIC_INTRO_STAGE;
+  function scan(deck, stageIndex, label) {
+    deck.forEach(function (id) {
+      const def = DATA.CARD_MAP[id];
+      const need = intro[def.ability];
+      if (need && stageIndex < need) {
+        assert.fail(label + ' 在 ' + stageIndex + ' 关提前出现了 ' + def.name);
+      }
+    });
+  }
+  scan(DATA.STARTER_DECK, 1, '初始牌组');
+  DATA.STAGES.forEach(function (stage) {
+    scan(DATA.AI_DECKS[stage.ai].deck, stage.index, stage.id + ' 的 AI');
+  });
+});
+
 test('1-1 到 1-10 的 AI 牌组都合法', function () {
   DATA.STAGES.forEach(function (stage) {
     const deck = DATA.AI_DECKS[stage.ai].deck;
@@ -502,5 +598,15 @@ test('1-1 到 1-10 的 AI 牌组都合法', function () {
       counts[id] = (counts[id] || 0) + 1;
       assert.ok(counts[id] <= DATA.maxCopies(id), stage.id + ' 的 ' + id + ' 超过上限');
     });
+  });
+});
+
+test('1-10 Boss 牌组包含全部主动机制', function () {
+  const abilities = {};
+  DATA.AI_DECKS['1-10'].deck.forEach(function (id) {
+    abilities[DATA.CARD_MAP[id].ability] = true;
+  });
+  Object.keys(DATA.MECHANIC_INTRO_STAGE).forEach(function (ability) {
+    assert.strictEqual(abilities[ability], true, 'Boss 牌组缺少 ' + ability);
   });
 });

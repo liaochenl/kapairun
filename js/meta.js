@@ -197,11 +197,42 @@
 
   /* ---------- 奖励 ---------- */
 
+  function fixedRewardCards(profile, stageId) {
+    const stage = DATA.STAGE_MAP[stageId];
+    if (!stage || !stage.reward) return [];
+    const claimed = profile.claimedRewards[stageId] || [];
+    return (stage.reward.fixed || []).filter(function (id) {
+      if (claimed.indexOf(id) !== -1) return false;
+      if (owned(profile, id) >= DATA.maxCopies(id)) return false;
+      return true;
+    });
+  }
+
+  /* 固定奖励在通关时自动发放；三选一才需要玩家选择。 */
+  function claimFixedRewards(profile, stageId) {
+    const stage = DATA.STAGE_MAP[stageId];
+    if (!stage || !stage.reward) return { newly: [], count: 0 };
+    const fixed = stage.reward.fixed || [];
+    const claimed = profile.claimedRewards[stageId] || [];
+    const newly = [];
+    fixed.forEach(function (id) {
+      if (claimed.indexOf(id) !== -1) return;
+      if (owned(profile, id) < DATA.maxCopies(id)) {
+        profile.collection[id] = owned(profile, id) + 1;
+        if (profile.discoveredCards.indexOf(id) === -1) profile.discoveredCards.push(id);
+        newly.push(DATA.CARD_MAP[id]);
+      }
+      claimed.push(id);
+    });
+    profile.claimedRewards[stageId] = claimed;
+    return { newly: newly, count: newly.length };
+  }
+
   function rewardOptions(profile, stageId) {
     const stage = DATA.STAGE_MAP[stageId];
     if (!stage || !stage.reward) return [];
     const claimed = profile.claimedRewards[stageId] || [];
-    return stage.reward.cards.filter(function (id) {
+    return (stage.reward.choice || []).filter(function (id) {
       if (claimed.indexOf(id) !== -1) return false;
       if (owned(profile, id) >= DATA.maxCopies(id)) return false;
       return true;
@@ -209,7 +240,8 @@
   }
 
   function hasReward(profile, stageId) {
-    return rewardOptions(profile, stageId).length > 0;
+    return fixedRewardCards(profile, stageId).length > 0 ||
+      rewardOptions(profile, stageId).length > 0;
   }
 
   function claimReward(profile, stageId, cardId) {
@@ -308,6 +340,8 @@
     clearedCount: clearedCount,
     bestStage: bestStage,
     markCleared: markCleared,
+    fixedRewardCards: fixedRewardCards,
+    claimFixedRewards: claimFixedRewards,
     rewardOptions: rewardOptions,
     hasReward: hasReward,
     claimReward: claimReward,

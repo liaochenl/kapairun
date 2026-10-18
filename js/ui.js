@@ -22,6 +22,7 @@
     aiThinking: false,
     matchEnded: false,
     rewardGained: null,
+    fixedGained: [],
     paradoxUnlocked: null,
     aiDelay: 620
   };
@@ -105,11 +106,19 @@
   }
 
   function rewardLabel(stage) {
-    const cards = stage.reward.cards.map(function (id) {
-      const def = card(id);
-      return def ? def.name : id;
-    });
-    return stage.reward.type === 'choice' ? '三选一：' + cards.join(' / ') : cards.join('');
+    function names(ids) {
+      return (ids || []).map(function (id) {
+        const def = card(id);
+        return def ? def.name : id;
+      });
+    }
+    const fixed = names(META.fixedRewardCards(app.profile, stage.id));
+    const choice = names(META.rewardOptions(app.profile, stage.id));
+    const parts = [];
+    if (fixed.length) parts.push(fixed.join('、'));
+    if (choice.length) parts.push('三选一：' + choice.join(' / '));
+    if (stage.id === '1-10') parts.push('四种悖论解禁');
+    return parts.join(' + ') || '—';
   }
 
   function canAct() {
@@ -633,6 +642,9 @@
       '<p class="modal-lesson">' + (modal.cards.length > 1
         ? '没有选走的牌不会消失，重复挑战这一关还能继续选择。'
         : '选择后直接加入收藏，可以立刻编入牌组。') + '</p>' +
+      ((app.fixedGained && app.fixedGained.length)
+        ? '<p class="modal-tip">固定奖励已发放：' + app.fixedGained.map(function (c) { return esc(c.name); }).join('、') + '</p>'
+        : '') +
       '<div class="reward-list">' + options + '</div>' +
       '<div class="modal-actions"><button class="ghost" data-action="reward-skip">稍后再选</button></div>';
   }
@@ -660,6 +672,9 @@
         : res.winner === 'draw'
           ? '双方同时失去最后一枚印记，整场平局。'
           : '你的印记归零。调整牌组，或者换一种投入节奏再来一次。') + '</p>' +
+      (app.fixedGained && app.fixedGained.length
+        ? '<div class="gained"><span>固定奖励 · 已获得</span><strong>' + app.fixedGained.map(function (c) { return esc(c.name); }).join('、') + '</strong><small>已加入收藏，可以编入牌组。</small></div>'
+        : '') +
       (gained ? '<div class="gained"><span>已获得</span><strong>' + esc(gained.name) + '</strong><small>' + esc(gained.text) + '</small></div>' : '') +
       (app.paradoxUnlocked && app.paradoxUnlocked.length
         ? '<div class="gained paradox-unlock"><span>第一章通关 · 悖论解禁</span><strong>罗素悖论 · 芝诺困境 · 不完备性危机 · 说谎者悖论</strong><small>四种悖论已进入收藏，可在卡组编辑器中使用。</small></div>'
@@ -698,6 +713,7 @@
     app.stage = stage;
     app.matchEnded = false;
     app.rewardGained = null;
+    app.fixedGained = [];
     app.paradoxUnlocked = null;
     app.mulliganSel = [];
     app.modal = { type: 'mulligan' };
@@ -911,6 +927,8 @@
     if (!m || !m.result) return;
     if (m.result.winner === 'player') {
       META.markCleared(app.profile, app.stage.id);
+      const fixed = META.claimFixedRewards(app.profile, app.stage.id);
+      app.fixedGained = fixed.newly;
       if (app.stage.id === '1-10') app.paradoxUnlocked = META.unlockParadoxes(app.profile);
       save();
       const options = META.rewardOptions(app.profile, app.stage.id);
@@ -943,6 +961,7 @@
     app.modal = null;
     app.matchEnded = false;
     app.rewardGained = null;
+    app.fixedGained = [];
     app.paradoxUnlocked = null;
     go('stages');
   }
@@ -1053,6 +1072,7 @@
       app.modal = null;
       app.matchEnded = false;
       app.rewardGained = null;
+      app.fixedGained = [];
       app.paradoxUnlocked = null;
       go('deck'); return;
     }

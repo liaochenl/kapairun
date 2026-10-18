@@ -215,17 +215,15 @@
   const STARTER_ENTRIES = {
     'euclid-apprentice': 3,
     'ruler-compass': 3,
-    'proportion': 2,
+    'proportion': 3,
     'triangle': 3,
     'parallel': 3,
-    'geometric-proof': 2,
+    'geometric-proof': 3,
     'pythagoras-disciple': 2,
     'pythagorean-theorem': 1,
     'number-line': 2,
     'coordinate': 1,
-    'conic': 1,
-    'withdraw': 1,
-    'clarify': 1
+    'conic': 1
   };
 
   const STARTER_DECK = deck(STARTER_ENTRIES);
@@ -241,14 +239,13 @@
       deck: deck({
         'euclid-apprentice': 3,
         'ruler-compass': 3,
-        'proportion': 2,
+        'proportion': 3,
         'triangle': 3,
         'number-line': 3,
         'coordinate': 3,
-        'geometric-proof': 2,
-        'conic': 2,
-        'withdraw': 2,
-        'clarify': 2
+        'geometric-proof': 3,
+        'conic': 3,
+        'parallel': 1
       })
     },
     '1-2': {
@@ -257,14 +254,12 @@
         'ruler-compass': 3,
         'proportion': 3,
         'triangle': 3,
-        'number-line': 2,
-        'coordinate': 2,
+        'number-line': 3,
+        'coordinate': 3,
         'parallel': 2,
         'conic': 2,
-        'geometric-proof': 2,
-        'zeno': 2,
-        'counterexample': 2,
-        'euclid-apprentice': 2
+        'geometric-proof': 3,
+        'euclid-apprentice': 3
       })
     },
     '1-3': {
@@ -310,7 +305,7 @@
         'number-line': 2,
         'conic': 2,
         'geometric-proof': 2,
-        'citation': 2
+        'euclid-apprentice': 2
       })
     },
     '1-6': {
@@ -396,7 +391,7 @@
         'set': 2,
         'infinity': 2,
         'limit': 2,
-        'proportion': 2,
+        'proportion': 1,
         'consensus': 1,
         'clarify': 1,
         'reductio': 2,
@@ -404,9 +399,22 @@
         'zeno': 1,
         'incompleteness': 1,
         'liar': 1,
-        'number-line': 2
+        'withdraw': 1,
+        'counterexample': 1,
+        'citation': 1
       })
     }
+  };
+
+  /* 主动特殊机制的首次教学关。测试会扫描 AI 牌组，禁止提前出现。 */
+  const MECHANIC_INTRO_STAGE = {
+    withdraw: 4,
+    counterexample: 5,
+    paradox: 6,
+    clarify: 6,
+    citation: 7,
+    reductio: 8,
+    consensus: 9
   };
 
   const STAGES = [
@@ -415,70 +423,70 @@
       lesson: '把牌打进它所属的排。三排分数相加，高者赢下小局。',
       tip: '先手不必急着 Pass：你打出的每一张牌都在给三排加分。',
       ai: '1-1', bossRule: null,
-      reward: { type: 'fixed', cards: ['pythagoras'] }
+      reward: { fixed: ['pythagoras'], choice: [] }
     },
     {
       id: '1-2', index: 2, name: '芝诺的龟', subtitle: 'Pass 与卡差',
       lesson: '对手 Pass 后你仍可行动。追不上就及时让局，手牌就是下一局的筹码。',
       tip: '领先时对手 Pass，直接 Pass 即可拿下小局；落后太多则不必把牌打光。',
       ai: '1-2', bossRule: null,
-      reward: { type: 'fixed', cards: ['pythagorean-theorem'] }
+      reward: { fixed: ['set'], choice: [] }
     },
     {
       id: '1-3', index: 3, name: '共证课堂', subtitle: '共证',
       lesson: '共证单位在同排每有一张其他友方单位就 +2，堆排比散打更划算。',
       tip: '比例论、三角形、圆锥曲线都有共证。',
       ai: '1-3', bossRule: null,
-      reward: { type: 'fixed', cards: ['set'] }
+      reward: { fixed: ['withdraw'], choice: [] }
     },
     {
       id: '1-4', index: 4, name: '命题回收', subtitle: '撤回命题',
       lesson: '撤回命题把己方单位收回手牌：可以救回被针对的牌，也可以重新触发联动。',
       tip: '撤回不是净赚，收回的牌需要再花一次行动打出。',
       ai: '1-4', bossRule: null,
-      reward: { type: 'fixed', cards: ['descartes'] }
+      reward: { fixed: ['counterexample'], choice: [] }
     },
     {
       id: '1-5', index: 5, name: '反例工坊', subtitle: '反例与抽牌',
       lesson: '反例会在对方战场留下 1 点单位，但你能立刻抽一张牌。',
       tip: '卡差比 1 点论证力更值钱，尤其是小局之间不自动抽牌。',
       ai: '1-5', bossRule: null,
-      reward: { type: 'choice', cards: ['counterexample', 'citation', 'limit'] }
+      reward: { fixed: ['clarify'], choice: ['limit', 'infinity', 'descartes'] }
     },
     {
       id: '1-6', index: 6, name: '悖论走廊', subtitle: '悖论与公理澄清',
       lesson: '悖论同时削弱双方一整排。公理澄清可以解除它。',
       tip: '巨匠免疫悖论。把巨匠放在被诅咒的排里，是稳定的反制。',
       ai: '1-6', bossRule: null,
-      reward: { type: 'fixed', cards: ['reductio'] }
+      reward: { fixed: ['citation'], choice: [] }
     },
     {
       id: '1-7', index: 7, name: '引证院', subtitle: '引证',
       lesson: '引证从弃牌堆复活一张单位。小局结束时被清场的单位，就是引证的素材。',
       tip: '第一局打出去的单位，第二局还能再回来一次。',
       ai: '1-7', bossRule: null,
-      reward: { type: 'fixed', cards: ['riemann'] }
+      reward: { fixed: ['reductio'], choice: [] }
     },
     {
       id: '1-8', index: 8, name: '归谬法庭', subtitle: '反证法',
       lesson: '反证法摧毁对方论证力最高的非巨匠单位。',
       tip: '把巨匠留在场上，可以挡住对手的反证法。',
       ai: '1-8', bossRule: null,
-      reward: { type: 'choice', cards: ['gauss', 'noether', 'infinity'] }
+      reward: { fixed: [], choice: ['gauss', 'noether', 'riemann'] }
     },
     {
       id: '1-9', index: 9, name: '综合辩场', subtitle: '联动与共识',
       lesson: '学派联动、共证、学术共识可以叠成一套完整的论证。',
       tip: '看清对手的牌组再决定这一局投入多少。',
       ai: '1-9', bossRule: null,
-      reward: { type: 'fixed', cards: ['consensus'] }
+      reward: { fixed: ['consensus'], choice: [] }
     },
     {
       id: '1-10', index: 10, name: '罗素悖论', subtitle: 'Boss · 自指',
       lesson: 'Boss 自指：第 2、3 小局开始时，罗素悖论会自动影响随机一排。',
       tip: '留一张公理澄清，或者用巨匠顶住被诅咒的排。',
       ai: '1-10', bossRule: 'self-reference',
-      reward: { type: 'fixed', cards: ['euclid'] }
+      reward: { fixed: ['euclid'], choice: [] }
     }
   ];
 
@@ -500,6 +508,7 @@
     STARTER_COUNTS: STARTER_COUNTS,
     AI_DECKS: AI_DECKS,
     STAGES: STAGES,
-    STAGE_MAP: STAGE_MAP
+    STAGE_MAP: STAGE_MAP,
+    MECHANIC_INTRO_STAGE: MECHANIC_INTRO_STAGE
   };
 });

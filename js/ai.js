@@ -1,4 +1,4 @@
-/* 《真理学院》V2 AI：合法行动 → 即时收益 → Pass 判断。
+/* 《真理学院》V2 AI：合法行动 → 连续追分模拟（Beam Search）→ Pass 判断。
    不依赖 DOM；不修改传入的 state（所有试算都在克隆上完成）。 */
 (function (root, factory) {
   'use strict';
@@ -8,6 +8,8 @@
   'use strict';
 
   const ROWS = DATA.ROWS;
+  const BEAM_WIDTH = 20;
+  const MAX_DEPTH = 10;
 
   function clone(state) {
     return JSON.parse(JSON.stringify(state));
@@ -19,20 +21,17 @@
     const res = BATTLE.playCard(copy, side, handIndex, opts || {});
     if (!res.ok) return null;
     const after = BATTLE.calculateScore(copy);
-    const me = state === copy ? side : side;
     const opp = BATTLE.other(side);
-    let gain = (after[me] - before[me]) - (after[opp] - before[opp]);
+    let gain = (after[side] - before[side]) - (after[opp] - before[opp]);
     const def = DATA.CARD_MAP[state[side].hand[handIndex]];
     if (def.ability === 'counterexample') gain += 5;
     else if (def.ability === 'citation') gain += 1;
     else if (def.ability === 'consensus') gain += 2;
     else if (def.ability === 'withdraw') gain += 3;
-    // 抽牌与手牌价值：反例的抽牌已经体现在 +5，其余不重复计算。
     return { gain: gain, state: copy };
   }
 
   function targetOptions(state, side, def) {
-    const opp = BATTLE.other(side);
     if (def.type === 'unit') return [{ row: def.row }];
     if (def.ability === 'counterexample') {
       return ROWS.map(function (row) { return { row: row }; });
@@ -89,37 +88,88 @@
     return actions;
   }
 
-  function capacity(state, side, actions) {
-    const bestPerHand = {};
-    (actions || candidateActions(state, side)).forEach(function (a) {
-      if (a.gain <= 0) return;
-      // 按手牌位置统计，不按 cardId 去重：三张三角形就是三份追分能力。
-      const key = a.index;
-      if (!bestPerHand[key] || a.gain > bestPerHand[key]) bestPerHand[key] = a.gain;
-    });
-    return Object.keys(bestPerHand).reduce(function (sum, key) {
-      return sum + bestPerHand[key];
-    }, 0);
+  /* 把状态改造成“轮到 side 连续行动，对手已 Pass”的模拟场。 */
+  function prepareSimulation(state, side) {
+    const sim = clone(state);
+    const opp = BATTLE.other(side);
+    sim.phase = 'play';
+    sim.current = side;
+    sim[side].passed = false;
+    sim[side].plays = 0;
+    sim[opp].passed = true;
+    return sim;
   }
 
-  function minCardsToOvertake(gains, need) {
-    const sorted = gains.slice().sort(function (a, b) { return b - a; });
-    let sum = 0;
-    for (let i = 0; i < sorted.length; i++) {
-      sum += sorted[i];
-      if (sum > need) return i + 1;
+  /* 连续行动模拟：从当前场面出发，交替枚举合法动作，直到超过 targetScore。
+     返回 { catchable, cardsNeeded, finalScore, sequence }。
+     sequence[0] 是这条追分路线应该打出的第一张牌。 */
+  function estimateCatchup(state, side, targetScore, options) {
+    if (state.phase === 'matchEnd' || state.result) {
+      return { catchable: false, cardsNeeded: Infinity, finalScore: 0, sequence: [] };
     }
-    return Infinity;
+    const sim = prepareSimulation(state, side);
+    const opp = BATTLE.other(side);
+    const target = targetScore == null ? BATTLE.calculateTotalScore(sim, opp) : targetScore;
+    const startScore = BATTLE.calculateTotalScore(sim, side);
+    const startOpp = BATTLE.calculateTotalScore(sim, opp);
+    if (startScore > target) {
+      return { catchable: true, cardsNeeded: 0, finalScore: startScore, sequence: [] };
+    }
+
+    const beamWidth = (options && options.beamWidth) || BEAM_WIDTH;
+    const maxDepth = Math.min(sim[side].hand.length, (options && options.maxDepth) || MAX_DEPTH);
+    let frontier = [{ state: sim, sequence: [], score: startScore }];
+    let bestScore = startScore;
+    let bestSequence = [];
+
+    for (let depth = 1; depth <= maxDepth; depth++) {
+      const next = [];
+      for (let f = 0; f < frontier.length; f++) {
+        const node = frontier[f];
+        const actions = candidateActions(node.state, side);
+        for (let a = 0; a < actions.length; a++) {
+          const action = actions[a];
+          const score = BATTLE.calculateTotalScore(action.state, side);
+          /* 对手分数如果因自己的牌变化（例如反例给对手 +1），目标分也要跟着变。 */
+          const goal = target + (BATTLE.calculateTotalScore(action.state, opp) - startOpp);
+          const sequence = node.sequence.concat([action]);
+          if (score > bestScore) {
+            bestScore = score;
+            bestSequence = sequence;
+          }
+          if (score > goal) {
+            return {
+              catchable: true,
+              cardsNeeded: depth,
+              finalScore: score,
+              sequence: sequence
+            };
+          }
+          next.push({ state: action.state, sequence: sequence, score: score });
+        }
+      }
+      if (!next.length) break;
+      next.sort(function (a, b) { return b.score - a.score; });
+      frontier = next.slice(0, beamWidth);
+    }
+
+    return {
+      catchable: false,
+      cardsNeeded: Infinity,
+      finalScore: bestScore,
+      sequence: bestSequence
+    };
   }
 
-  function bestGains(actions) {
-    const bestPerHand = {};
-    actions.forEach(function (a) {
-      if (a.gain <= 0) return;
-      const key = a.index;
-      if (!bestPerHand[key] || a.gain > bestPerHand[key]) bestPerHand[key] = a.gain;
-    });
-    return Object.keys(bestPerHand).map(function (key) { return bestPerHand[key]; });
+  function playAction(action, reason) {
+    return {
+      type: 'play',
+      index: action.index,
+      cardId: action.cardId,
+      opts: action.opts,
+      gain: action.gain,
+      reason: reason
+    };
   }
 
   function chooseAction(state, side) {
@@ -139,8 +189,6 @@
     const diff = myScore - oppScore;
     const mustWin = me.seals === 1;
     const oppPassed = them.passed;
-    const myCapacity = capacity(state, side, actions);
-    const gains = bestGains(actions);
     const mePlays = me.plays || 0;
 
     /* 第 2 小局、刚赢下第 1 小局且对手未动：直接 Pass，保留手牌打决胜局。 */
@@ -150,19 +198,18 @@
 
     if (oppPassed) {
       if (diff > 0) return { type: 'pass', reason: 'ahead-and-opponent-passed', value: 0 };
-      if (diff === 0) return playAction(best, 'take-lead');
-      const need = -diff;
-      if (myCapacity < need) return { type: 'pass', reason: 'cannot-catch-up', value: 0 };
-      const needed = minCardsToOvertake(gains, need);
-      if (!isFinite(needed)) return { type: 'pass', reason: 'cannot-catch-up', value: 0 };
+      const chase = estimateCatchup(state, side, oppScore);
+      if (!chase.catchable) return { type: 'pass', reason: 'cannot-catch-up', value: 0 };
       // 让局：需要三张以上、且还有两枚印记时，保留手牌打下一局。
-      if (!mustWin && needed >= 3 && me.seals >= 2) {
+      if (!mustWin && chase.cardsNeeded >= 3 && me.seals >= 2) {
         return { type: 'pass', reason: 'too-expensive-to-catch-up', value: 0 };
       }
-      if (!mustWin && me.seals >= 2 && needed >= 2 && me.hand.length <= 2) {
+      if (!mustWin && me.seals >= 2 && chase.cardsNeeded >= 2 && me.hand.length <= 2) {
         return { type: 'pass', reason: 'save-cards', value: 0 };
       }
-      return playAction(best, 'fight-for-round');
+      const first = chase.sequence[0];
+      if (!first) return { type: 'pass', reason: 'no-sequence', value: 0 };
+      return playAction(first, 'fight-for-round');
     }
 
     /* 第 1 小局的手牌预算：打满 4 张就收手，避免把整手牌倒在第一局。 */
@@ -172,35 +219,24 @@
 
     if (diff > 0) {
       if (them.hand.length === 0) return { type: 'pass', reason: 'opponent-empty-hand', value: 0 };
-      const oppCapacity = capacity(state, opp);
-      if (diff >= oppCapacity && them.hand.length <= 4) {
+      // 如果 AI 现在 Pass，对手连续行动能不能反超？不能才安全 Pass。
+      const threat = estimateCatchup(state, opp, myScore);
+      if (!threat.catchable) {
         return { type: 'pass', reason: 'lead-unreachable', value: 0 };
-      }
-      if (diff >= 12 && me.seals >= 2 && them.hand.length <= 2) {
-        return { type: 'pass', reason: 'big-lead-save-cards', value: 0 };
       }
       return playAction(best, 'press-lead');
     }
 
     if (diff < 0) {
-      if (myCapacity < -diff && !mustWin && me.seals >= 2) {
+      const chase = estimateCatchup(state, side, oppScore);
+      if (!chase.catchable && !mustWin && me.seals >= 2) {
         return { type: 'pass', reason: 'cannot-catch-up', value: 0 };
       }
-      return playAction(best, 'catch-up');
+      const first = chase.sequence[0] || best;
+      return playAction(first, 'catch-up');
     }
 
     return playAction(best, 'open-round');
-  }
-
-  function playAction(action, reason) {
-    return {
-      type: 'play',
-      index: action.index,
-      cardId: action.cardId,
-      opts: action.opts,
-      gain: action.gain,
-      reason: reason
-    };
   }
 
   /* 换牌：换掉最没有保留价值的两张（重复的联动牌与低价值策略牌）。 */
@@ -254,9 +290,10 @@
   return {
     chooseAction: chooseAction,
     candidateActions: candidateActions,
+    estimateCatchup: estimateCatchup,
+    prepareSimulation: prepareSimulation,
     autoMulligan: autoMulligan,
     act: act,
-    capacity: capacity,
     keepValue: keepValue
   };
 });
