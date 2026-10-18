@@ -8,6 +8,7 @@
   const AI = window.TA_AI;
   const META = window.TA_META;
   const PLAYTEST = window.TA_PLAYTEST;
+  const SHOP = window.TA_SHOP;
 
   const ROW_LABELS = DATA.ROW_LABELS;
   const ROW_SHORT = { axiom: '公', reasoning: '推', theorem: '定' };
@@ -25,6 +26,7 @@
     rewardGained: null,
     fixedGained: [],
     paradoxUnlocked: null,
+    stageGold: 0,
     playtestSession: null,
     aiDelay: 620
   };
@@ -43,9 +45,26 @@
 
   function owned(id) { return app.profile ? app.profile.collection[id] || 0 : 0; }
 
+  function activeDeck() { return app.profile ? META.activeDeck(app.profile) : null; }
+
   function inDeck(id) { return app.profile ? META.inDeck(app.profile, id) : 0; }
 
-  function deckSize() { return app.profile ? app.profile.deck.length : 0; }
+  function deckSize() { const d = activeDeck(); return d ? d.cards.length : 0; }
+
+  function isDiscovered(id) {
+    return !!app.profile && app.profile.discoveredCards.indexOf(id) !== -1;
+  }
+
+  function sourceLabel(def) {
+    if (!def || !def.sources) return '未知';
+    return def.sources.map(function (src) {
+      if (src.type === 'starter') return src.faction === 'logic' ? '逻辑初始套牌' : '几何初始套牌';
+      if (src.type === 'shop') return '学术商店';
+      if (src.type === 'boss') return src.stage + ' Boss 首通';
+      if (src.type === 'stage') return '第' + (src.chapter === 2 ? '二' : '一') + '章 ' + src.stage + ' 奖励';
+      return '未知';
+    }).join(' · ');
+  }
 
   function save() { META.saveProfile(app.profile); }
 
@@ -77,6 +96,11 @@
     if (def.ability === 'reductio') return '反证';
     if (def.ability === 'clarify') return '澄清';
     if (def.ability === 'paradox') return '排效果';
+    if (def.ability === 'negate') return '否定';
+    if (def.ability === 'diagonal') return '对角线';
+    if (def.ability === 'deduce') return '推论';
+    if (def.ability === 'axiomatize') return '公理化';
+    if (def.ability === 'draw') return '抽牌';
     return '';
   }
 
@@ -144,7 +168,7 @@
       location.hash = '#stages';
       return;
     }
-    const screen = ['home', 'stages', 'deck', 'codex', 'battle', 'playtest'].indexOf(h) >= 0 ? h : 'home';
+    const screen = ['home', 'stages', 'deck', 'codex', 'shop', 'battle', 'playtest'].indexOf(h) >= 0 ? h : 'home';
     if (screen !== 'battle') {
       clearAITimer();
       app.modal = null;
@@ -178,6 +202,7 @@
     else if (app.screen === 'deck') html = deckHTML();
     else if (app.screen === 'codex') html = codexHTML();
     else if (app.screen === 'battle') html = battleHTML();
+    else if (app.screen === 'shop') html = shopHTML();
     else if (app.screen === 'playtest') html = playtestHTML();
     else html = homeHTML();
     el.innerHTML = html;
@@ -197,6 +222,9 @@
     document.body.classList.add('modal-open');
     let body = '';
     if (app.modal.type === 'stage') body = stageModalHTML(app.modal.stageId);
+    else if (app.modal.type === 'newdeck') body = newDeckModalHTML();
+    else if (app.modal.type === 'rename') body = renameModalHTML();
+    else if (app.modal.type === 'card') body = cardDetailHTML(app.modal.cardId);
     else if (app.modal.type === 'mulligan') body = mulliganModalHTML();
     else if (app.modal.type === 'target') body = targetModalHTML();
     else if (app.modal.type === 'round') body = roundModalHTML();
@@ -211,7 +239,7 @@
     const cleared = META.clearedCount(app.profile);
     const total = DATA.STAGES.length;
     const ownedKinds = DATA.CARDS.filter(function (c) {
-      return c.collectible && owned(c.id) > 0;
+      return c.collectible && (owned(c.id) > 0 || isDiscovered(c.id));
     }).length;
     const totalKinds = DATA.CARDS.filter(function (c) { return c.collectible; }).length;
     const p = app.profile;
@@ -228,7 +256,7 @@
       '  <div class="menu">' +
       '    <button class="menu-btn primary" data-action="nav-stages">' +
       '      <span class="mb-title">课程</span>' +
-      '      <span class="mb-sub">1-1 ～ 1-10 · 已通关 ' + cleared + '/' + total + '</span>' +
+      '      <span class="mb-sub">1-1 ～ 2-10 · 已通关 ' + cleared + '/' + total + '</span>' +
       '    </button>' +
       '    <button class="menu-btn" data-action="nav-deck">' +
       '      <span class="mb-title">卡组</span>' +
@@ -237,7 +265,11 @@
       '    </button>' +
       '    <button class="menu-btn" data-action="nav-codex">' +
       '      <span class="mb-title">图鉴</span>' +
-      '      <span class="mb-sub">已收录 ' + ownedKinds + ' / ' + totalKinds + ' 种</span>' +
+      '      <span class="mb-sub">已发现 ' + ownedKinds + ' / ' + totalKinds + ' 种</span>' +
+      '    </button>' +
+      '    <button class="menu-btn" data-action="nav-shop">' +
+      '      <span class="mb-title">商店</span>' +
+      '      <span class="mb-sub">金币 ' + (p.gold || 0) + ' · 学术商店</span>' +
       '    </button>' +
       '  </div>' +
       '  <div class="home-foot">' +
@@ -253,36 +285,54 @@
 
   /* ---------- 课程 ---------- */
 
+  function stageCardHTML(stage) {
+    const unlocked = META.isStageUnlocked(app.profile, stage.id);
+    const cleared = !!app.profile.clearedStages[stage.id];
+    const rewardLeft = META.hasReward(app.profile, stage.id);
+    const gold = cleared ? stage.goldRepeat : stage.goldFirst;
+    const rewardText = rewardLeft ? rewardLabel(stage) : '已领取';
+    return '' +
+      '<button class="stage-card ' + (unlocked ? '' : 'locked') + (cleared ? ' cleared' : '') + '"' +
+      ' data-action="open-stage" data-id="' + stage.id + '"' + (unlocked ? '' : ' disabled') + '>' +
+      '  <span class="stage-index">' + stage.id + '</span>' +
+      '  <span class="stage-main">' +
+      '    <span class="stage-name">' + esc(stage.name) + '</span>' +
+      '    <span class="stage-sub">' + esc(stage.subtitle) + ' · ' + esc(DATA.AI_DECKS[stage.ai].name) + '</span>' +
+      '    <span class="stage-reward">金币 ' + gold + ' · ' + (rewardLeft ? '奖励 ' + esc(rewardText) : '奖励已领取') + '</span>' +
+      '  </span>' +
+      '  <span class="stage-state">' + (cleared ? '已通关' : unlocked ? '可挑战' : '未解锁') + '</span>' +
+      '</button>';
+  }
+
   function stagesHTML() {
-    const cards = DATA.STAGES.map(function (stage) {
-      const unlocked = META.isStageUnlocked(app.profile, stage.id);
-      const cleared = !!app.profile.clearedStages[stage.id];
-      const rewardLeft = META.hasReward(app.profile, stage.id);
+    const sections = DATA.CHAPTERS.map(function (chapter) {
+      const locked = chapter.id === 2 && !app.profile.unlockedChapters[2];
+      const stages = chapter.stages.map(function (id) {
+        return stageCardHTML(DATA.STAGE_MAP[id]);
+      }).join('');
       return '' +
-        '<button class="stage-card ' + (unlocked ? '' : 'locked') + (cleared ? ' cleared' : '') + '"' +
-        ' data-action="open-stage" data-id="' + stage.id + '"' + (unlocked ? '' : ' disabled') + '>' +
-        '  <span class="stage-index">' + stage.id + '</span>' +
-        '  <span class="stage-main">' +
-        '    <span class="stage-name">' + esc(stage.name) + '</span>' +
-        '    <span class="stage-sub">' + esc(stage.subtitle) + ' · ' + esc(DATA.AI_DECKS[stage.ai].name) + '</span>' +
-        '    <span class="stage-reward">' + (rewardLeft ? '奖励：' + esc(rewardLabel(stage)) : '奖励已领取') + '</span>' +
-        '  </span>' +
-        '  <span class="stage-state">' + (cleared ? '已通关' : unlocked ? '可挑战' : '未解锁') + '</span>' +
-        '</button>';
+        '<section class="chapter-block ' + (locked ? 'locked' : '') + '">' +
+        '  <div class="chapter-head"><div><h3>' + (chapter.id === 2 ? '第二章' : '第一章') + ' · ' + esc(chapter.name) + '</h3>' +
+        '    <p>' + esc(chapter.subtitle) + (locked ? ' · 通关 1-10 解锁' : '') + '</p></div>' +
+        '    <span>' + chapter.stages.filter(function (id) { return app.profile.clearedStages[id]; }).length +
+        ' / ' + chapter.stages.length + '</span></div>' +
+        '  <div class="stage-list">' + stages + '</div>' +
+        '</section>';
     }).join('');
     return '' +
       '<section class="screen stages">' +
       '  <header class="page-head">' +
       '    <button class="ghost" data-action="nav-home">← 学院</button>' +
-      '    <div><h2>课程</h2><p>第一章 · 悖论裂缝</p></div>' +
+      '    <div><h2>课程</h2><p>两章 · 二十关 · 几何与逻辑</p></div>' +
       '    <div class="head-actions">' +
       '      <button class="ghost" data-action="nav-deck">卡组</button>' +
       '      <button class="ghost" data-action="nav-codex">图鉴</button>' +
+      '      <button class="ghost" data-action="nav-shop">商店</button>' +
       '      <span class="page-count">' + META.clearedCount(app.profile) + ' / ' + DATA.STAGES.length + '</span>' +
       '    </div>' +
       '  </header>' +
-      '  <div class="stage-list">' + cards + '</div>' +
-      '  <p class="page-note">难度来自对手牌组，而不是等级。每关首通获得一张新卡；三选一奖励可以重复挑战继续领取。</p>' +
+      sections +
+      '  <p class="page-note">首通金币与卡牌同时发放；重复通关给少量金币。三选一奖励可重复挑战领完。</p>' +
       '</section>';
   }
 
@@ -290,10 +340,11 @@
 
   function deckHTML() {
     const p = app.profile;
-    const counts = META.deckCounts(p);
-    const check = META.validateDeck(p);
-    const list = DATA.CARDS.filter(function (c) { return c.collectible; })
-      .filter(function (c) { return owned(c.id) > 0; })
+    const deck = activeDeck();
+    if (!deck) return '<section class="screen"><p class="empty-state">没有牌组。</p></section>';
+    const counts = META.deckCounts(deck);
+    const check = META.validateDeck(p, deck);
+    const list = DATA.CARDS.filter(function (c) { return c.collectible && owned(c.id) > 0; })
       .sort(function (a, b) {
         const order = { axiom: 0, reasoning: 1, theorem: 2 };
         if (a.type !== b.type) return a.type === 'unit' ? -1 : 1;
@@ -304,10 +355,11 @@
     const rows = list.map(function (c) {
       const n = owned(c.id);
       const d = counts[c.id] || 0;
-      const addCheck = META.canAdd(p, c.id);
+      const addCheck = META.canAdd(p, c.id, deck.id);
+      const allowed = META.canUseInDeck(p, c.id, deck.faction);
       return '' +
-        '<div class="own-card">' +
-        '  <div class="oc-info" title="' + esc(cardTitle(c)) + '">' +
+        '<div class="own-card ' + (allowed ? '' : 'off-faction') + '">' +
+        '  <div class="oc-info" title="' + esc(cardTitle(c)) + '" data-action="card-detail" data-id="' + c.id + '">' +
         '    <span class="oc-name">' + esc(c.name) + '</span>' +
         '    <span class="oc-meta">' + esc(cardMeta(c)) + (abilityLabel(c) ? ' · ' + abilityLabel(c) : '') + '</span>' +
         '  </div>' +
@@ -320,9 +372,14 @@
         '</div>';
     }).join('');
 
+    const tabs = p.decks.map(function (d) {
+      return '<button class="deck-tab ' + (d.id === deck.id ? 'active' : '') + '" data-action="switch-deck" data-id="' + d.id + '">' +
+        '<span>' + esc(d.name) + '</span><small>' + esc((DATA.FACTIONS[d.faction] || {}).name || d.faction) + ' · ' + d.cards.length + '/25</small></button>';
+    }).join('');
+
     const rowCounts = { axiom: 0, reasoning: 0, theorem: 0 };
     const typeCounts = { unit: 0, special: 0 };
-    p.deck.forEach(function (id) {
+    deck.cards.forEach(function (id) {
       const def = card(id);
       if (!def) return;
       if (def.type === 'unit' && rowCounts[def.row] != null) rowCounts[def.row]++;
@@ -334,9 +391,19 @@
       '<section class="screen deck-screen">' +
       '  <header class="page-head">' +
       '    <button class="ghost" data-action="nav-home">← 学院</button>' +
-      '    <div><h2>卡组</h2><p>恰好 25 张 · 普通同名上限 3 · 巨匠 1</p></div>' +
-      '    <span class="deck-total ' + (check.ok ? 'ok' : 'bad') + '">' + p.deck.length + ' / 25</span>' +
+      '    <div><h2>卡组</h2><p>最多 3 套 · 主阵营 + 中立 · 恰好 25 张</p></div>' +
+      '    <span class="deck-total ' + (check.ok ? 'ok' : 'bad') + '">' + deck.cards.length + ' / 25</span>' +
       '  </header>' +
+      '  <div class="deck-tabs">' + tabs +
+      '    <button class="deck-tab add" data-action="new-deck"' + (p.decks.length >= META.MAX_DECKS ? ' disabled' : '') + '>＋ 新牌组</button>' +
+      '  </div>' +
+      '  <div class="deck-deckhead">' +
+      '    <div><strong>' + esc(deck.name) + '</strong><span>' + esc((DATA.FACTIONS[deck.faction] || {}).name || deck.faction) + '</span></div>' +
+      '    <div class="head-actions">' +
+      '      <button class="ghost" data-action="rename-deck">重命名</button>' +
+      '      <button class="ghost danger" data-action="delete-deck"' + (p.decks.length <= 1 ? ' disabled' : '') + '>删除</button>' +
+      '    </div>' +
+      '  </div>' +
       '  <div class="deck-layout">' +
       '    <div class="owned-panel">' +
       '      <h3>已拥有</h3>' +
@@ -344,7 +411,7 @@
       '    </div>' +
       '    <aside class="deck-summary">' +
       '      <h3>当前牌组</h3>' +
-      '      <div class="deck-meter"><span style="width:' + Math.min(100, p.deck.length / 25 * 100) + '%"></span></div>' +
+      '      <div class="deck-meter"><span style="width:' + Math.min(100, deck.cards.length / 25 * 100) + '%"></span></div>' +
       '      <dl class="deck-breakdown">' +
       '        <div><dt>公理域</dt><dd>' + rowCounts.axiom + '</dd></div>' +
       '        <div><dt>推演域</dt><dd>' + rowCounts.reasoning + '</dd></div>' +
@@ -372,25 +439,80 @@
       const list = DATA.CARDS.filter(function (c) { return c.type === g.key; });
       const cards = list.map(function (c) {
         const have = c.collectible ? owned(c.id) : 0;
-        const locked = c.collectible && have === 0;
+        const known = have > 0 || isDiscovered(c.id);
+        if (!known) {
+          return '' +
+            '<article class="codex-card unknown type-' + c.type + '">' +
+            '  <header><span class="cc-name">???</span><span class="cc-count">未发现</span></header>' +
+            '  <div class="cc-art">?</div>' +
+            '  <p class="cc-meta">尚未在课程或商店中见过</p>' +
+            '</article>';
+        }
         return '' +
-          '<article class="codex-card ' + (locked ? 'locked' : '') + ' type-' + c.type + '" title="' + esc(cardTitle(c)) + '">' +
+          '<article class="codex-card ' + (have > 0 ? 'owned' : 'revealed') + ' type-' + c.type + '" data-action="card-detail" data-id="' + c.id + '" title="' + esc(cardTitle(c)) + '">' +
           '  <header><span class="cc-name">' + esc(c.name) + '</span>' +
-          '    <span class="cc-count">' + (c.collectible ? (have > 0 ? '×' + have : '未收录') : '敌方专属') + '</span>' +
+          '    <span class="cc-count">' + (have > 0 ? '×' + have : '已发现') + '</span>' +
           '  </header>' +
+          '  <div class="cc-art">' + esc((DATA.FACTIONS[c.faction] || {}).mark || '∴') + '</div>' +
           '  <p class="cc-meta">' + esc(cardMeta(c)) + '</p>' +
           '  <p class="cc-text">' + esc(c.text) + '</p>' +
+          '  <p class="cc-source">' + esc(sourceLabel(c)) + '</p>' +
           '</article>';
       }).join('');
       return '<section class="codex-group"><h3>' + g.label + '</h3><div class="codex-grid">' + cards + '</div></section>';
     }).join('');
+    const knownCount = DATA.CARDS.filter(function (c) { return owned(c.id) > 0 || isDiscovered(c.id); }).length;
     return '' +
       '<section class="screen codex">' +
       '  <header class="page-head">' +
       '    <button class="ghost" data-action="nav-home">← 学院</button>' +
-      '    <div><h2>图鉴</h2><p>30 张卡 · 通关 1-10 解锁四种悖论</p></div>' +
+      '    <div><h2>图鉴</h2><p>' + DATA.CARDS.length + ' 张卡 · 已发现 ' + knownCount + '</p></div>' +
       '  </header>' +
       sections +
+      '</section>';
+  }
+
+  /* ---------- 商店 ---------- */
+
+  function shopHTML() {
+    if (SHOP.ensureShop(app.profile)) save();
+    const p = app.profile;
+    const slots = [];
+    for (let i = 0; i < SHOP.SLOTS; i++) {
+      const slot = p.shop.inventory[i];
+      if (!slot) {
+        slots.push('<div class="shop-slot empty"><span>暂无合适卡牌</span></div>');
+        continue;
+      }
+      const def = card(slot.cardId);
+      const have = owned(slot.cardId);
+      const maxed = have >= DATA.maxCopies(slot.cardId);
+      const disabled = slot.sold || maxed || p.gold < slot.price;
+      slots.push('' +
+        '<div class="shop-slot faction-' + def.faction + ' type-' + def.type + '">' +
+        '  <div class="shop-card" data-action="card-detail" data-id="' + def.id + '">' +
+        '    <span class="sc-faction">' + esc((DATA.FACTIONS[def.faction] || {}).name || def.faction) + '</span>' +
+        '    <strong>' + esc(def.name) + '</strong>' +
+        '    <span class="sc-meta">' + esc(cardMeta(def)) + '</span>' +
+        '    <span class="sc-text">' + esc(def.text) + '</span>' +
+        '    <span class="sc-have">已拥有 ' + have + ' / ' + DATA.maxCopies(def.id) + '</span>' +
+        '  </div>' +
+        '  <button class="shop-buy" data-action="shop-buy" data-slot="' + i + '"' + (disabled ? ' disabled' : '') + '>' +
+        (slot.sold ? '已售出' : maxed ? '已满' : '购买 ' + slot.price + ' 金币') +
+        '  </button>' +
+        '</div>');
+    }
+    return '' +
+      '<section class="screen shop">' +
+      '  <header class="page-head">' +
+      '    <button class="ghost" data-action="nav-home">← 学院</button>' +
+      '    <div><h2>学术商店</h2><p>通关后自动刷新 · 只出售已解锁学派的非首通奖励卡</p></div>' +
+      '    <div class="shop-head-right"><span class="gold-chip">金币 ' + p.gold + '</span>' +
+      '      <button class="ghost" data-action="shop-refresh"' + (p.gold < SHOP.REFRESH_COST ? ' disabled' : '') + '>刷新 ' + SHOP.REFRESH_COST + '</button>' +
+      '    </div>' +
+      '  </header>' +
+      '  <div class="shop-grid">' + slots.join('') + '</div>' +
+      '  <p class="page-note">刷新后旧商品会消失；购买后立即进入收藏。首通奖励卡与巨匠不会出现在商店。</p>' +
       '</section>';
   }
 
@@ -405,7 +527,7 @@
       stageId: stage.id,
       stageName: stage.name,
       startedAt: Date.now(),
-      deckAtStart: app.profile.deck.slice(),
+      deckAtStart: (activeDeck() ? activeDeck().cards.slice() : []),
       rounds: [],
       current: emptyRoundStats(),
       finished: false,
@@ -455,9 +577,9 @@
 
   function playtestHTML() {
     const records = PLAYTEST.load();
-    const summary = PLAYTEST.summary(records, app.profile.deck);
+    const summary = PLAYTEST.summary(records, activeDeck() ? activeDeck().cards : []);
     const rows = records.map(function (r, i) {
-      return { record: r, changed: PLAYTEST.deckChangedFor(records, i, app.profile.deck) };
+      return { record: r, changed: PLAYTEST.deckChangedFor(records, i, activeDeck() ? activeDeck().cards : []) };
     }).reverse();
 
     const stats = [
@@ -597,6 +719,8 @@
         if (def.ability === 'master') cls.push('master');
         if (def.ability === 'bond') cls.push('bond');
         if (def.ability === 'corroborate') cls.push('corroborate');
+        if (def.ability === 'deduce' && u.deduced) cls.push('deduced');
+        if (u.axiomized) cls.push('axiomized');
         return '<span class="' + cls.join(' ') + '" title="' + esc(cardTitle(def)) + '">' +
           '<span class="u-name">' + esc(def.name) + '</span>' +
           '<span class="u-power">' + power + '</span>' +
@@ -667,7 +791,9 @@
       '<div class="modal-grid">' +
       '  <div><span class="mg-label">对手</span><span class="mg-value">' + esc(aiDeck.name) + '</span></div>' +
       '  <div><span class="mg-label">奖励</span><span class="mg-value">' + esc(rewardLabel(stage)) + '</span></div>' +
-      '  <div><span class="mg-label">你的牌组</span><span class="mg-value ' + (deckCheck.ok ? '' : 'bad') + '">' + app.profile.deck.length + ' / 25</span></div>' +
+      '  <div><span class="mg-label">金币</span><span class="mg-value">首通 ' + stage.goldFirst + ' / 重复 ' + stage.goldRepeat + '</span></div>' +
+      '  <div><span class="mg-label">你的牌组</span><span class="mg-value ' + (deckCheck.ok ? '' : 'bad') + '">' +
+      (activeDeck() ? esc(activeDeck().name) + ' · ' + activeDeck().cards.length + ' / 25' : '无') + '</span></div>' +
       '  <div><span class="mg-label">真理印记</span><span class="mg-value">2 : 2</span></div>' +
       '  <div><span class="mg-label">先手</span><span class="mg-value">掷硬币</span></div>' +
       '</div>' +
@@ -775,6 +901,68 @@
       '<div class="modal-actions"><button class="ghost" data-action="reward-skip">稍后再选</button></div>';
   }
 
+  function newDeckModalHTML() {
+    const factions = ['geometry', 'logic'].filter(function (f) {
+      return app.profile.unlockedFactions[f];
+    });
+    const chosen = app.newDeckFaction || (activeDeck() ? activeDeck().faction : 'geometry');
+    return '' +
+      '<div class="modal-head"><p class="modal-eyebrow">最多 3 套牌</p><h2>新建牌组</h2></div>' +
+      '<label class="field-label">牌组名<input id="new-deck-name" class="text-input" maxlength="16" value="新牌组"></label>' +
+      '<p class="field-label">主阵营</p>' +
+      '<div class="faction-pick">' + factions.map(function (f) {
+        return '<button class="faction-option ' + (f === chosen ? 'active' : '') + '" data-action="new-deck-faction" data-faction="' + f + '">' +
+          '<strong>' + esc((DATA.FACTIONS[f] || {}).name || f) + '</strong>' +
+          '<small>' + (f === 'logic' ? '逻辑与集合 · 控制与推论' : '几何学派 · 共证与联动') + '</small></button>';
+      }).join('') + '</div>' +
+      '<p class="modal-tip">新牌组从 0 张开始，需要自己加入 25 张合法卡牌。</p>' +
+      '<div class="modal-actions"><button class="ghost" data-action="modal-close">取消</button>' +
+      '<button class="primary" data-action="create-deck">创建</button></div>';
+  }
+
+  function renameModalHTML() {
+    const deck = activeDeck();
+    return '' +
+      '<div class="modal-head"><p class="modal-eyebrow">当前牌组</p><h2>重命名</h2></div>' +
+      '<label class="field-label">牌组名<input id="rename-deck-name" class="text-input" maxlength="16" value="' + esc(deck ? deck.name : '') + '"></label>' +
+      '<div class="modal-actions"><button class="ghost" data-action="modal-close">取消</button>' +
+      '<button class="primary" data-action="rename-deck-confirm">保存</button></div>';
+  }
+
+  function cardDetailHTML(cardId) {
+    const def = card(cardId);
+    if (!def) return '<p class="empty-state">卡牌不存在。</p>';
+    const have = owned(def.id);
+    const inDecks = app.profile.decks.map(function (d) {
+      const count = META.deckCounts(d)[def.id] || 0;
+      return count ? d.name + ' ×' + count : null;
+    }).filter(Boolean);
+    return '' +
+      '<div class="card-detail-head">' +
+      '  <div class="card-art faction-' + def.faction + ' type-' + def.type + (def.ability === 'master' ? ' master' : '') + '">' +
+      '    <span>' + esc((DATA.FACTIONS[def.faction] || {}).mark || '∴') + '</span>' +
+      '  </div>' +
+      '  <div>' +
+      '    <p class="modal-eyebrow">' + esc(typeLabel(def)) + ' · ' + esc((DATA.FACTIONS[def.faction] || {}).name || def.faction) + '</p>' +
+      '    <h2>' + esc(def.name) + '</h2>' +
+      '    <p class="cc-meta">' + esc(cardMeta(def)) + (abilityLabel(def) ? ' · ' + abilityLabel(def) : '') + '</p>' +
+      '  </div>' +
+      '</div>' +
+      '<p class="modal-lesson">' + esc(def.text) + '</p>' +
+      '<div class="modal-grid">' +
+      '  <div><span class="mg-label">拥有</span><span class="mg-value">' + have + ' / ' + DATA.maxCopies(def.id) + '</span></div>' +
+      '  <div><span class="mg-label">牌组</span><span class="mg-value">' + (inDecks.length ? esc(inDecks.join(' · ')) : '未编入') + '</span></div>' +
+      '  <div><span class="mg-label">获取来源</span><span class="mg-value">' + esc(sourceLabel(def)) + '</span></div>' +
+      '  <div><span class="mg-label">商店等级</span><span class="mg-value">' + esc(def.shopTier || '—') + (def.shop ? ' · 可出售' : ' · 不出售') + '</span></div>' +
+      '</div>' +
+      '<div class="modal-actions"><button class="primary" data-action="modal-close">关闭</button></div>';
+  }
+
+  function openCardDetail(cardId) {
+    app.modal = { type: 'card', cardId: cardId };
+    renderOverlay();
+  }
+
   function resultModalHTML() {
     const m = app.match;
     const res = m ? m.result : null;
@@ -787,6 +975,7 @@
       '  <p class="modal-eyebrow">' + app.stage.id + ' · ' + esc(app.stage.name) + '</p>' +
       '  <h2 class="result-title ' + res.winner + '">' + title + '</h2>' +
       '</div>' +
+      (app.stageGold ? '<div class="gained"><span>金币 · 已获得</span><strong>+' + app.stageGold + ' 学术金币</strong><small>当前金币 ' + app.profile.gold + '</small></div>' : '') +
       '<div class="final-score">' +
       '  <span class="fs-side">你</span><strong>' + res.playerSeals + '</strong>' +
       '  <span class="fs-colon">:</span>' +
@@ -830,7 +1019,7 @@
     }
     clearAITimer();
     app.match = BATTLE.createMatch({
-      playerDeck: app.profile.deck,
+      playerDeck: activeDeck().cards,
       aiDeck: DATA.AI_DECKS[stage.ai].deck,
       seed: (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0,
       stageId: stage.id,
@@ -842,6 +1031,7 @@
     app.rewardGained = null;
     app.fixedGained = [];
     app.paradoxUnlocked = null;
+    app.stageGold = 0;
     app.mulliganSel = [];
     app.modal = { type: 'mulligan' };
     if (location.hash === '#battle') {
@@ -878,7 +1068,8 @@
     const id = app.match.player.hand[index];
     const def = card(id);
     if (!def) return;
-    if (def.type === 'unit' || def.ability === 'reductio' || def.ability === 'consensus') {
+    if (def.type === 'unit' || def.ability === 'reductio' || def.ability === 'consensus' ||
+        def.ability === 'draw' || def.ability === 'negate') {
       playPlayer(index, {});
       return;
     }
@@ -901,6 +1092,9 @@
     if (def.ability === 'citation') return '弃牌堆里还没有可引证的单位';
     if (def.ability === 'withdraw') return '场上没有可撤回的单位';
     if (def.ability === 'clarify') return '没有需要澄清的悖论';
+    if (def.ability === 'negate') return '对方最近没有可以否定的策略牌';
+    if (def.ability === 'diagonal') return '对方没有一排达到 3 个单位';
+    if (def.ability === 'axiomatize') return '场上没有可以公理化的普通单位';
     return '现在不能打出这张牌';
   }
 
@@ -937,7 +1131,7 @@
       BATTLE.ROWS.forEach(function (row) {
         m.player.board[row].forEach(function (u) {
           const d = card(u.id);
-          if (d.ability === 'master') return;
+          if (d.ability === 'master' || d.token) return;
           options.push({
             unitUid: u.uid,
             label: d.name + '（' + BATTLE.unitPower(m, 'player', u) + ' 点）',
@@ -971,6 +1165,35 @@
           };
         })
       };
+    }
+    if (def.ability === 'diagonal') {
+      const options = BATTLE.ROWS.filter(function (row) {
+        return m.ai.board[row].length >= 3;
+      }).map(function (row) {
+        return {
+          row: row,
+          label: '对手 · ' + ROW_LABELS[row] + '（' + m.ai.board[row].length + ' 个单位）',
+          sub: '在己方' + ROW_LABELS[row] + '生成 3 点自指命题'
+        };
+      });
+      if (!options.length) return null;
+      return { prompt: '选择对方铺满三单位的一排。', options: options };
+    }
+    if (def.ability === 'axiomatize') {
+      const options = [];
+      BATTLE.ROWS.forEach(function (row) {
+        m.player.board[row].forEach(function (u) {
+          const d = card(u.id);
+          if (d.ability === 'master' || u.axiomized) return;
+          options.push({
+            unitUid: u.uid,
+            label: d.name + '（' + BATTLE.unitPower(m, 'player', u) + ' 点）',
+            sub: ROW_LABELS[row] + ' · 本小局不受悖论影响'
+          });
+        });
+      });
+      if (!options.length) return null;
+      return { prompt: '选择一个普通单位，使其本小局不受悖论影响。', options: options };
     }
     return null;
   }
@@ -1025,9 +1248,11 @@
         render();
         return;
       }
-      const res = AI.act(cur, 'ai');
+      const res = AI.act(cur, 'ai', DATA.AI_PROFILES[app.stage.id]);
       if (!res.ok) {
         BATTLE.pass(cur, 'ai');
+      } else if (res.action && res.action.type === 'play') {
+        if (META.discoverCard(app.profile, res.action.cardId)) save();
       }
       captureRound();
       if (cur.phase === 'roundEnd') {
@@ -1060,10 +1285,12 @@
     if (!m || !m.result) return;
     captureRound();
     if (m.result.winner === 'player') {
-      META.markCleared(app.profile, app.stage.id);
+      const clear = META.completeStage(app.profile, app.stage.id);
+      app.stageGold = clear.gold;
       const fixed = META.claimFixedRewards(app.profile, app.stage.id);
       app.fixedGained = fixed.newly;
       if (app.stage.id === '1-10') app.paradoxUnlocked = META.unlockParadoxes(app.profile);
+      SHOP.refreshShop(app.profile, { free: true });
       save();
       const options = META.rewardOptions(app.profile, app.stage.id);
       if (options.length) {
@@ -1089,7 +1316,7 @@
         seals: { player: m.result.playerSeals, ai: m.result.aiSeals },
         roundStats: session.rounds.slice(),
         deckAtStart: session.deckAtStart.slice(),
-        deckAfter: app.profile.deck.slice(),
+        deckAfter: (activeDeck() ? activeDeck().cards.slice() : []),
         durationMs: Date.now() - session.startedAt,
         fixedReward: (app.fixedGained || []).map(function (c) { return c.id; }),
         paradoxUnlocked: (app.paradoxUnlocked || []).slice(),
@@ -1125,6 +1352,7 @@
     app.rewardGained = null;
     app.fixedGained = [];
     app.paradoxUnlocked = null;
+    app.stageGold = 0;
     go('stages');
   }
 
@@ -1140,7 +1368,67 @@
     if (action === 'nav-stages') { go('stages'); return; }
     if (action === 'nav-deck') { go('deck'); return; }
     if (action === 'nav-codex') { go('codex'); return; }
+    if (action === 'nav-shop') { go('shop'); return; }
     if (action === 'nav-playtest') { go('playtest'); return; }
+    if (action === 'card-detail') { openCardDetail(id); return; }
+    if (action === 'switch-deck') {
+      META.setActiveDeck(app.profile, id);
+      save(); render(); return;
+    }
+    if (action === 'new-deck') {
+      app.newDeckFaction = activeDeck() ? activeDeck().faction : 'geometry';
+      app.modal = { type: 'newdeck' };
+      renderOverlay(); return;
+    }
+    if (action === 'new-deck-faction') {
+      app.newDeckFaction = el.getAttribute('data-faction');
+      renderOverlay(); return;
+    }
+    if (action === 'create-deck') {
+      const input = document.getElementById('new-deck-name');
+      const res = META.createDeck(app.profile, { name: input ? input.value : '', faction: app.newDeckFaction });
+      if (!res.ok) { toast(res.reason); return; }
+      save();
+      app.modal = null;
+      render();
+      toast('已创建「' + res.deck.name + '」');
+      return;
+    }
+    if (action === 'rename-deck') {
+      app.modal = { type: 'rename' };
+      renderOverlay(); return;
+    }
+    if (action === 'rename-deck-confirm') {
+      const input = document.getElementById('rename-deck-name');
+      const res = META.renameDeck(app.profile, app.profile.activeDeckId, input ? input.value : '');
+      if (!res.ok) { toast(res.reason); return; }
+      save();
+      app.modal = null;
+      render(); return;
+    }
+    if (action === 'delete-deck') {
+      if (!window.confirm('删除当前牌组？牌不会从收藏中消失。')) return;
+      const res = META.deleteDeck(app.profile, app.profile.activeDeckId);
+      if (!res.ok) { toast(res.reason); return; }
+      save(); render(); return;
+    }
+    if (action === 'shop-buy') {
+      const slot = Number(el.getAttribute('data-slot'));
+      const res = SHOP.buyShopCard(app.profile, slot);
+      if (!res.ok) { toast(res.reason); return; }
+      save();
+      render();
+      toast('已获得「' + res.card.name + '」');
+      return;
+    }
+    if (action === 'shop-refresh') {
+      const res = SHOP.refreshShop(app.profile, { free: false });
+      if (!res.ok) { toast(res.reason); return; }
+      save();
+      render();
+      toast('商店已刷新 · -' + SHOP.REFRESH_COST + ' 金币');
+      return;
+    }
     if (action === 'clear-playtest') {
       if (!window.confirm('清空本地试玩记录？不会影响游戏存档。')) return;
       PLAYTEST.clear();
@@ -1245,6 +1533,7 @@
       app.rewardGained = null;
       app.fixedGained = [];
       app.paradoxUnlocked = null;
+      app.stageGold = 0;
       go('deck'); return;
     }
     if (action === 'reward-pick') { claimReward(id); return; }
@@ -1252,6 +1541,7 @@
 
   function init() {
     app.profile = META.loadProfile() || META.defaultProfile();
+    SHOP.ensureShop(app.profile);
     if (!META.saveProfile(app.profile)) { /* file:// 仍可能写入，失败就算了 */ }
     document.getElementById('app').addEventListener('click', onClick);
     document.getElementById('overlay-root').addEventListener('click', onClick);

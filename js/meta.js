@@ -1,5 +1,6 @@
-/* 《真理学院》V2 元游戏：V2 存档、收藏、牌组、关卡解锁、奖励。
-   只保留 collection / deck / clearedStages / claimedRewards / discoveredCards / settings。 */
+/* 《真理学院》V2 元游戏：金币、多牌组、收藏、关卡解锁、奖励、V2 存档。
+   第二阶段档案：gold / collection / discoveredCards / decks / activeDeckId /
+   clearedStages / claimedRewards / unlockedFactions / unlockedChapters / shop / settings。 */
 (function (root, factory) {
   'use strict';
   if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./data.js'));
@@ -10,6 +11,8 @@
   const STORAGE_KEY = 'truth_academy_save_v2';
   const VERSION = 2;
   const DECK_SIZE = 25;
+  const MAX_DECKS = 3;
+  const START_GOLD = 150;
 
   function now() {
     return Date.now();
@@ -23,11 +26,21 @@
     return {
       version: VERSION,
       createdAt: now(),
+      gold: START_GOLD,
       collection: collection,
-      deck: DATA.STARTER_DECK.slice(),
+      discoveredCards: Object.keys(collection),
+      decks: [{
+        id: 'deck-1',
+        name: '几何基础',
+        faction: 'geometry',
+        cards: DATA.STARTER_DECK.slice()
+      }],
+      activeDeckId: 'deck-1',
       clearedStages: {},
       claimedRewards: {},
-      discoveredCards: Object.keys(collection),
+      unlockedFactions: { geometry: true, logic: false },
+      unlockedChapters: { 1: true, 2: false },
+      shop: { inventory: [], seed: 0, refreshCount: 0 },
       settings: { sound: true, animations: true }
     };
   }
@@ -36,119 +49,87 @@
     return Math.max(min, Math.min(max, v));
   }
 
-  function ensureProfile(raw) {
-    if (!raw || typeof raw !== 'object') return defaultProfile();
-    if (Number(raw.version) === 1) return defaultProfile();
-    const p = raw;
-    p.version = VERSION;
-
-    const collection = {};
-    if (p.collection && typeof p.collection === 'object') {
-      Object.keys(p.collection).forEach(function (id) {
-        const def = DATA.CARD_MAP[id];
-        if (!def || !def.collectible) return;
-        const n = Math.floor(Number(p.collection[id]) || 0);
-        if (n > 0) collection[id] = clamp(n, 0, DATA.maxCopies(id));
-      });
-    }
-    p.collection = collection;
-
-    const deck = [];
-    if (Array.isArray(p.deck)) {
-      const counts = {};
-      p.deck.forEach(function (id) {
-        const def = DATA.CARD_MAP[id];
-        if (!def || !def.collectible) return;
-        const n = counts[id] || 0;
-        if (n >= (collection[id] || 0)) return;
-        if (n >= DATA.maxCopies(id)) return;
-        if (deck.length >= DECK_SIZE) return;
-        counts[id] = n + 1;
-        deck.push(id);
-      });
-    }
-    p.deck = deck;
-    // TODO(第二阶段): 若卡牌 ID 迁移导致 deck < 25，可从 collection 自动补合法基础牌；
-    // 但不能在正常编辑（临时少于 25 张）时覆盖玩家选择，需要额外标记“存档损坏”。
-
-    if (!p.clearedStages || typeof p.clearedStages !== 'object') p.clearedStages = {};
-    if (!p.claimedRewards || typeof p.claimedRewards !== 'object') p.claimedRewards = {};
-    Object.keys(p.claimedRewards).forEach(function (stageId) {
-      if (!DATA.STAGE_MAP[stageId] || !Array.isArray(p.claimedRewards[stageId])) {
-        delete p.claimedRewards[stageId];
-        return;
-      }
-      p.claimedRewards[stageId] = p.claimedRewards[stageId].filter(function (id) {
-        return !!DATA.CARD_MAP[id];
-      });
-    });
-    Object.keys(p.clearedStages).forEach(function (stageId) {
-      if (!DATA.STAGE_MAP[stageId]) delete p.clearedStages[stageId];
-    });
-
-    if (!Array.isArray(p.discoveredCards)) p.discoveredCards = [];
-    Object.keys(p.collection).forEach(function (id) {
-      if (p.discoveredCards.indexOf(id) === -1) p.discoveredCards.push(id);
-    });
-    p.discoveredCards = p.discoveredCards.filter(function (id) { return !!DATA.CARD_MAP[id]; });
-
-    if (!p.settings || typeof p.settings !== 'object') p.settings = { sound: true, animations: true };
-    if (typeof p.settings.sound !== 'boolean') p.settings.sound = true;
-    if (typeof p.settings.animations !== 'boolean') p.settings.animations = true;
-    return p;
-  }
-
-  /* ---------- 收藏与牌组 ---------- */
-
   function owned(profile, id) {
     return Math.max(0, Math.floor(profile.collection[id] || 0));
   }
 
-  function deckCounts(profile) {
+  function canUseInDeck(profile, cardId, faction) {
+    const def = DATA.CARD_MAP[cardId];
+    if (!def || !def.collectible) return false;
+    if (faction !== 'geometry' && faction !== 'logic') return false;
+    if (!profile.unlockedFactions[faction]) return false;
+    return def.faction === faction || def.faction === 'neutral';
+  }
+
+  function deckCounts(deck) {
     const counts = {};
-    profile.deck.forEach(function (id) {
+    (deck && deck.cards || []).forEach(function (id) {
       counts[id] = (counts[id] || 0) + 1;
     });
     return counts;
   }
 
-  function inDeck(profile, id) {
-    return deckCounts(profile)[id] || 0;
+  function getDeck(profile, deckId) {
+    const id = deckId || profile.activeDeckId;
+    return profile.decks.find(function (d) { return d.id === id; }) || null;
   }
 
-  function canAdd(profile, id) {
-    const def = DATA.CARD_MAP[id];
+  function activeDeck(profile) {
+    let deck = getDeck(profile, profile.activeDeckId);
+    if (deck) return deck;
+    deck = profile.decks[0];
+    if (deck) profile.activeDeckId = deck.id;
+    return deck || null;
+  }
+
+  function inDeck(profile, cardId, deckId) {
+    const deck = getDeck(profile, deckId) || activeDeck(profile);
+    return deckCounts(deck)[cardId] || 0;
+  }
+
+  function canAdd(profile, cardId, deckId) {
+    const deck = getDeck(profile, deckId) || activeDeck(profile);
+    if (!deck) return { ok: false, reason: '没有牌组' };
+    const def = DATA.CARD_MAP[cardId];
     if (!def || !def.collectible) return { ok: false, reason: '这张牌不能加入牌组' };
-    if (profile.deck.length >= DECK_SIZE) return { ok: false, reason: '牌组已满 25 张，请先移除一张' };
-    if (inDeck(profile, id) >= DATA.maxCopies(id)) {
-      return { ok: false, reason: '同名上限 ' + DATA.maxCopies(id) + ' 张' };
+    if (deck.cards.length >= DECK_SIZE) return { ok: false, reason: '牌组已满 25 张，请先移除一张' };
+    if (!canUseInDeck(profile, cardId, deck.faction)) {
+      return { ok: false, reason: '这张牌不属于「' + (DATA.FACTIONS[deck.faction] || {}).name + '」牌组' };
     }
-    if (inDeck(profile, id) >= owned(profile, id)) {
+    if (inDeck(profile, cardId, deck.id) >= DATA.maxCopies(cardId)) {
+      return { ok: false, reason: '同名上限 ' + DATA.maxCopies(cardId) + ' 张' };
+    }
+    if (inDeck(profile, cardId, deck.id) >= owned(profile, cardId)) {
       return { ok: false, reason: '收藏中的数量不足' };
     }
     return { ok: true, reason: '' };
   }
 
-  function addCard(profile, id) {
-    const check = canAdd(profile, id);
+  function addCard(profile, cardId, deckId) {
+    const check = canAdd(profile, cardId, deckId);
     if (!check.ok) return check;
-    profile.deck.push(id);
+    const deck = getDeck(profile, deckId) || activeDeck(profile);
+    deck.cards.push(cardId);
     return { ok: true, reason: '' };
   }
 
-  function removeCard(profile, id) {
-    const idx = profile.deck.lastIndexOf(id);
+  function removeCard(profile, cardId, deckId) {
+    const deck = getDeck(profile, deckId) || activeDeck(profile);
+    if (!deck) return { ok: false, reason: '没有牌组' };
+    const idx = deck.cards.lastIndexOf(cardId);
     if (idx === -1) return { ok: false, reason: '牌组里没有这张牌' };
-    profile.deck.splice(idx, 1);
+    deck.cards.splice(idx, 1);
     return { ok: true, reason: '' };
   }
 
-  function validateDeck(profile) {
+  function validateDeck(profile, deckOrId) {
+    const deck = typeof deckOrId === 'string' ? getDeck(profile, deckOrId) : (deckOrId || activeDeck(profile));
     const errors = [];
-    if (profile.deck.length !== DECK_SIZE) {
-      errors.push('牌组需要恰好 25 张，当前 ' + profile.deck.length + ' 张');
+    if (!deck) return { ok: false, errors: ['没有牌组'], count: 0, deck: null };
+    if (deck.cards.length !== DECK_SIZE) {
+      errors.push('牌组需要恰好 25 张，当前 ' + deck.cards.length + ' 张');
     }
-    const counts = deckCounts(profile);
+    const counts = deckCounts(deck);
     Object.keys(counts).forEach(function (id) {
       const def = DATA.CARD_MAP[id];
       if (!def) {
@@ -161,16 +142,101 @@
       if (counts[id] > owned(profile, id)) {
         errors.push(def.name + ' 数量超过收藏');
       }
+      if (!canUseInDeck(profile, id, deck.faction)) {
+        errors.push(def.name + ' 不能加入「' + (DATA.FACTIONS[deck.faction] || {}).name + '」牌组');
+      }
     });
-    return { ok: errors.length === 0, errors: errors, count: profile.deck.length };
+    return { ok: errors.length === 0, errors: errors, count: deck.cards.length, deck: deck };
   }
 
-  /* ---------- 关卡 ---------- */
+  function createDeck(profile, options) {
+    if (profile.decks.length >= MAX_DECKS) return { ok: false, reason: '最多保存 ' + MAX_DECKS + ' 套牌' };
+    const faction = options && options.faction === 'logic' ? 'logic' : 'geometry';
+    if (!profile.unlockedFactions[faction]) return { ok: false, reason: '该学派尚未解锁' };
+    let n = 1;
+    while (getDeck(profile, 'deck-' + n)) n++;
+    const deck = {
+      id: 'deck-' + n,
+      name: (options && options.name) || ('新牌组 ' + n),
+      faction: faction,
+      cards: []
+    };
+    profile.decks.push(deck);
+    profile.activeDeckId = deck.id;
+    return { ok: true, reason: '', deck: deck };
+  }
+
+  function deleteDeck(profile, deckId) {
+    if (profile.decks.length <= 1) return { ok: false, reason: '至少保留一套牌组' };
+    const idx = profile.decks.findIndex(function (d) { return d.id === deckId; });
+    if (idx === -1) return { ok: false, reason: '牌组不存在' };
+    profile.decks.splice(idx, 1);
+    if (profile.activeDeckId === deckId) profile.activeDeckId = profile.decks[0].id;
+    return { ok: true, reason: '' };
+  }
+
+  function renameDeck(profile, deckId, name) {
+    const deck = getDeck(profile, deckId);
+    if (!deck) return { ok: false, reason: '牌组不存在' };
+    const clean = String(name || '').trim();
+    if (!clean) return { ok: false, reason: '名字不能为空' };
+    deck.name = clean.slice(0, 16);
+    return { ok: true, reason: '' };
+  }
+
+  function setActiveDeck(profile, deckId) {
+    const deck = getDeck(profile, deckId);
+    if (!deck) return { ok: false, reason: '牌组不存在' };
+    profile.activeDeckId = deckId;
+    return { ok: true, reason: '' };
+  }
+
+  function discoverCard(profile, cardId) {
+    if (!DATA.CARD_MAP[cardId]) return false;
+    if (profile.discoveredCards.indexOf(cardId) === -1) {
+      profile.discoveredCards.push(cardId);
+      return true;
+    }
+    return false;
+  }
+
+  function ensureCollectionCount(profile, cardId, count) {
+    const def = DATA.CARD_MAP[cardId];
+    if (!def || !def.collectible) return;
+    const target = Math.min(DATA.maxCopies(cardId), Math.max(owned(profile, cardId), count));
+    profile.collection[cardId] = target;
+    discoverCard(profile, cardId);
+  }
+
+  function unlockLogic(profile) {
+    const before = profile.unlockedFactions.logic;
+    profile.unlockedFactions.logic = true;
+    profile.unlockedChapters[2] = true;
+    const counts = DATA.FACTION_STARTER_COUNTS.logic || {};
+    Object.keys(counts).forEach(function (id) {
+      ensureCollectionCount(profile, id, counts[id]);
+    });
+    let deckAdded = false;
+    if (!profile.decks.some(function (d) { return d.faction === 'logic'; }) && profile.decks.length < MAX_DECKS) {
+      let n = 1;
+      while (getDeck(profile, 'deck-' + n)) n++;
+      profile.decks.push({
+        id: 'deck-' + n,
+        name: '逻辑与集合',
+        faction: 'logic',
+        cards: DATA.LOGIC_STARTER_DECK.slice()
+      });
+      deckAdded = true;
+    }
+    return { newlyUnlocked: !before, deckAdded: deckAdded };
+  }
 
   function isStageUnlocked(profile, stageId) {
     const idx = DATA.STAGES.findIndex(function (s) { return s.id === stageId; });
     if (idx < 0) return false;
     if (idx === 0) return true;
+    const stage = DATA.STAGES[idx];
+    if (stage.chapter === 2 && !profile.unlockedChapters[2]) return false;
     return !!profile.clearedStages[DATA.STAGES[idx - 1].id];
   }
 
@@ -187,12 +253,20 @@
     return unlocked.length ? unlocked[unlocked.length - 1].id : '1-1';
   }
 
-  function markCleared(profile, stageId) {
+  function completeStage(profile, stageId) {
     const stage = DATA.STAGE_MAP[stageId];
-    if (!stage) return { ok: false, reason: '未知关卡', firstClear: false };
+    if (!stage) return { ok: false, reason: '未知关卡', firstClear: false, gold: 0 };
     const firstClear = !profile.clearedStages[stageId];
     profile.clearedStages[stageId] = true;
-    return { ok: true, reason: '', firstClear: firstClear };
+    const gold = firstClear ? (stage.goldFirst || 0) : (stage.goldRepeat || 0);
+    profile.gold += gold;
+    if (stageId === '1-10') unlockLogic(profile);
+    return { ok: true, reason: '', firstClear: firstClear, gold: gold };
+  }
+
+  function markCleared(profile, stageId) {
+    const res = completeStage(profile, stageId);
+    return { ok: res.ok, reason: res.reason, firstClear: res.firstClear };
   }
 
   /* ---------- 奖励 ---------- */
@@ -208,7 +282,6 @@
     });
   }
 
-  /* 固定奖励在通关时自动发放；三选一才需要玩家选择。 */
   function claimFixedRewards(profile, stageId) {
     const stage = DATA.STAGE_MAP[stageId];
     if (!stage || !stage.reward) return { newly: [], count: 0 };
@@ -219,7 +292,7 @@
       if (claimed.indexOf(id) !== -1) return;
       if (owned(profile, id) < DATA.maxCopies(id)) {
         profile.collection[id] = owned(profile, id) + 1;
-        if (profile.discoveredCards.indexOf(id) === -1) profile.discoveredCards.push(id);
+        discoverCard(profile, id);
         newly.push(DATA.CARD_MAP[id]);
       }
       claimed.push(id);
@@ -255,9 +328,7 @@
     if (profile.claimedRewards[stageId].indexOf(cardId) === -1) {
       profile.claimedRewards[stageId].push(cardId);
     }
-    if (profile.discoveredCards.indexOf(cardId) === -1) {
-      profile.discoveredCards.push(cardId);
-    }
+    discoverCard(profile, cardId);
     return { ok: true, reason: '', card: def, count: profile.collection[cardId] };
   }
 
@@ -267,7 +338,7 @@
     ids.forEach(function (id) {
       if (owned(profile, id) > 0) return;
       profile.collection[id] = 1;
-      if (profile.discoveredCards.indexOf(id) === -1) profile.discoveredCards.push(id);
+      discoverCard(profile, id);
       newly.push(id);
     });
     return newly;
@@ -277,7 +348,7 @@
     const def = DATA.CARD_MAP[cardId];
     if (!def || !def.collectible) return { ok: false, reason: '不能获得这张牌' };
     profile.collection[cardId] = Math.min(DATA.maxCopies(cardId), owned(profile, cardId) + 1);
-    if (profile.discoveredCards.indexOf(cardId) === -1) profile.discoveredCards.push(cardId);
+    discoverCard(profile, cardId);
     return { ok: true, reason: '', count: profile.collection[cardId] };
   }
 
@@ -288,6 +359,116 @@
       if (typeof localStorage !== 'undefined') return localStorage;
     } catch (e) { /* ignore */ }
     return null;
+  }
+
+  function sanitizeDecks(profile) {
+    const decks = [];
+    const rawDecks = Array.isArray(profile.decks) ? profile.decks : [];
+    rawDecks.slice(0, MAX_DECKS).forEach(function (raw, i) {
+      if (!raw || typeof raw !== 'object') return;
+      const faction = raw.faction === 'logic' ? 'logic' : 'geometry';
+      const counts = {};
+      const cards = [];
+      (Array.isArray(raw.cards) ? raw.cards : []).forEach(function (id) {
+        const def = DATA.CARD_MAP[id];
+        if (!def || !def.collectible) return;
+        if (!canUseInDeck(profile, id, faction)) return;
+        const n = counts[id] || 0;
+        if (n >= owned(profile, id) || n >= DATA.maxCopies(id)) return;
+        if (cards.length >= DECK_SIZE) return;
+        counts[id] = n + 1;
+        cards.push(id);
+      });
+      decks.push({
+        id: raw.id || ('deck-' + (i + 1)),
+        name: String(raw.name || ('牌组 ' + (i + 1))).slice(0, 16),
+        faction: faction,
+        cards: cards
+      });
+    });
+    if (!decks.length) {
+      const cards = DATA.STARTER_DECK.filter(function (id) {
+        return owned(profile, id) > 0 && canUseInDeck(profile, id, 'geometry');
+      }).slice(0, DECK_SIZE);
+      decks.push({ id: 'deck-1', name: '几何基础', faction: 'geometry', cards: cards });
+    }
+    profile.decks = decks;
+    if (!getDeck(profile, profile.activeDeckId)) profile.activeDeckId = decks[0].id;
+  }
+
+  function ensureProfile(raw) {
+    if (!raw || typeof raw !== 'object') return defaultProfile();
+    if (Number(raw.version) === 1) return defaultProfile();
+    const p = raw;
+    p.version = VERSION;
+
+    /* V2 第一阶段旧档案：deck -> decks[0] */
+    if (Array.isArray(p.deck) && !Array.isArray(p.decks)) {
+      p.decks = [{ id: 'deck-1', name: '几何基础', faction: 'geometry', cards: p.deck.slice() }];
+      p.activeDeckId = 'deck-1';
+    }
+    delete p.deck;
+
+    const collection = {};
+    if (p.collection && typeof p.collection === 'object') {
+      Object.keys(p.collection).forEach(function (id) {
+        const def = DATA.CARD_MAP[id];
+        if (!def || !def.collectible) return;
+        const n = Math.floor(Number(p.collection[id]) || 0);
+        if (n > 0) collection[id] = clamp(n, 0, DATA.maxCopies(id));
+      });
+    }
+    p.collection = collection;
+    p.gold = p.gold == null ? START_GOLD : Math.max(0, Math.floor(Number(p.gold) || 0));
+
+    if (!Array.isArray(p.discoveredCards)) p.discoveredCards = [];
+    Object.keys(p.collection).forEach(function (id) {
+      if (p.discoveredCards.indexOf(id) === -1) p.discoveredCards.push(id);
+    });
+    p.discoveredCards = p.discoveredCards.filter(function (id) { return !!DATA.CARD_MAP[id]; });
+
+    if (!p.clearedStages || typeof p.clearedStages !== 'object') p.clearedStages = {};
+    if (!p.claimedRewards || typeof p.claimedRewards !== 'object') p.claimedRewards = {};
+    Object.keys(p.claimedRewards).forEach(function (stageId) {
+      if (!DATA.STAGE_MAP[stageId] || !Array.isArray(p.claimedRewards[stageId])) {
+        delete p.claimedRewards[stageId];
+        return;
+      }
+      p.claimedRewards[stageId] = p.claimedRewards[stageId].filter(function (id) {
+        return !!DATA.CARD_MAP[id];
+      });
+    });
+    Object.keys(p.clearedStages).forEach(function (stageId) {
+      if (!DATA.STAGE_MAP[stageId]) delete p.clearedStages[stageId];
+    });
+
+    if (!p.unlockedFactions || typeof p.unlockedFactions !== 'object') {
+      p.unlockedFactions = { geometry: true, logic: false };
+    }
+    p.unlockedFactions.geometry = true;
+    p.unlockedFactions.logic = !!p.unlockedFactions.logic;
+    if (!p.unlockedChapters || typeof p.unlockedChapters !== 'object') {
+      p.unlockedChapters = { 1: true, 2: false };
+    }
+    p.unlockedChapters[1] = true;
+    p.unlockedChapters[2] = !!p.unlockedChapters[2];
+
+    if (!p.shop || typeof p.shop !== 'object') p.shop = { inventory: [], seed: 0, refreshCount: 0 };
+    if (!Array.isArray(p.shop.inventory)) p.shop.inventory = [];
+    p.shop.inventory = p.shop.inventory.filter(function (slot) {
+      return slot && typeof slot === 'object' && !!DATA.CARD_MAP[slot.cardId];
+    }).slice(0, 6);
+    p.shop.seed = Math.floor(Number(p.shop.seed) || 0);
+    p.shop.refreshCount = Math.max(0, Math.floor(Number(p.shop.refreshCount) || 0));
+
+    sanitizeDecks(p);
+
+    if (!p.settings || typeof p.settings !== 'object') p.settings = { sound: true, animations: true };
+    if (typeof p.settings.sound !== 'boolean') p.settings.sound = true;
+    if (typeof p.settings.animations !== 'boolean') p.settings.animations = true;
+
+    if (p.clearedStages['1-10']) unlockLogic(p);
+    return p;
   }
 
   function saveProfile(profile, storage) {
@@ -327,18 +508,30 @@
     STORAGE_KEY: STORAGE_KEY,
     VERSION: VERSION,
     DECK_SIZE: DECK_SIZE,
+    MAX_DECKS: MAX_DECKS,
+    START_GOLD: START_GOLD,
     defaultProfile: defaultProfile,
     ensureProfile: ensureProfile,
     owned: owned,
+    canUseInDeck: canUseInDeck,
     deckCounts: deckCounts,
+    getDeck: getDeck,
+    activeDeck: activeDeck,
     inDeck: inDeck,
     canAdd: canAdd,
     addCard: addCard,
     removeCard: removeCard,
     validateDeck: validateDeck,
+    createDeck: createDeck,
+    deleteDeck: deleteDeck,
+    renameDeck: renameDeck,
+    setActiveDeck: setActiveDeck,
+    discoverCard: discoverCard,
+    unlockLogic: unlockLogic,
     isStageUnlocked: isStageUnlocked,
     clearedCount: clearedCount,
     bestStage: bestStage,
+    completeStage: completeStage,
     markCleared: markCleared,
     fixedRewardCards: fixedRewardCards,
     claimFixedRewards: claimFixedRewards,

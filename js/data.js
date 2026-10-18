@@ -16,7 +16,7 @@
   const FACTIONS = {
     geometry: { id: 'geometry', name: '几何学派', mark: '△', color: '#7fc8a9' },
     analysis: { id: 'analysis', name: '分析学派', mark: '∫', color: '#8db6e8' },
-    logic: { id: 'logic', name: '逻辑学派', mark: '⊢', color: '#e0a86b' },
+    logic: { id: 'logic', name: '逻辑与集合', mark: '⊢', color: '#b49ae8' },
     neutral: { id: 'neutral', name: '通用', mark: '∴', color: '#cfc7ac' }
   };
 
@@ -36,8 +36,8 @@
     }, extra || {});
   }
 
-  function special(id, name, ability, text) {
-    return {
+  function special(id, name, ability, text, extra) {
+    return Object.assign({
       id: id,
       name: name,
       faction: 'neutral',
@@ -49,7 +49,7 @@
       maxCopies: 3,
       collectible: true,
       text: text
-    };
+    }, extra || {});
   }
 
   function paradox(id, name, effect, text) {
@@ -103,17 +103,20 @@
     unit('coordinate', '坐标系', 'geometry', 'reasoning', 5, null, {
       text: '把几何翻译成代数。'
     }),
+    unit('auxiliary-line', '辅助线', 'geometry', 'axiom', 3, null, {
+      text: '一条临时画上去的线，常常是整道证明的入口。'
+    }),
     unit('conic', '圆锥曲线', 'geometry', 'theorem', 5, 'corroborate', {
       text: '共证：同排每有一张其他友方单位，+2 论证力。'
     }),
-    unit('limit', '极限', 'analysis', 'theorem', 6, 'bond', {
+    unit('limit', '极限', 'neutral', 'theorem', 6, 'bond', {
       bondId: 'infinite',
       text: '学派联动·无穷：与另一张同组牌同时存在时，论证力翻倍。'
     }),
-    unit('set', '集合', 'logic', 'reasoning', 4, 'corroborate', {
+    unit('set', '集合', 'neutral', 'reasoning', 4, 'corroborate', {
       text: '共证：同排每有一张其他友方单位，+2 论证力。'
     }),
-    unit('infinity', '无穷', 'analysis', 'theorem', 6, 'bond', {
+    unit('infinity', '无穷', 'neutral', 'theorem', 6, 'bond', {
       bondId: 'infinite',
       text: '学派联动·无穷：与另一张同组牌同时存在时，论证力翻倍。'
     }),
@@ -126,11 +129,11 @@
     unit('descartes', '笛卡尔', 'geometry', 'reasoning', 7, 'corroborate', {
       text: '共证：同排每有一张其他友方单位，+2 论证力。'
     }),
-    unit('riemann', '黎曼', 'analysis', 'theorem', 8, 'bond', {
+    unit('riemann', '黎曼', 'neutral', 'theorem', 8, 'bond', {
       bondId: 'infinite',
       text: '学派联动·无穷：与另一张同组牌同时存在时，论证力翻倍。'
     }),
-    unit('noether', '诺特', 'logic', 'theorem', 7, 'corroborate', {
+    unit('noether', '诺特', 'neutral', 'theorem', 7, 'corroborate', {
       text: '共证：同排每有一张其他友方单位，+2 论证力。'
     }),
 
@@ -138,7 +141,7 @@
     unit('euclid', '欧几里得·巨匠', 'geometry', 'axiom', 10, 'master', {
       text: '巨匠：不受悖论、反证法与撤回命题影响。'
     }),
-    unit('gauss', '高斯·巨匠', 'analysis', 'theorem', 10, 'master', {
+    unit('gauss', '高斯·巨匠', 'neutral', 'theorem', 10, 'master', {
       text: '巨匠：不受悖论、反证法与撤回命题影响。'
     }),
 
@@ -156,6 +159,93 @@
     special('clarify', '公理澄清', 'clarify',
       '解除一排的悖论效果。'),
 
+    /* ---- 逻辑与集合：基础单位 ×9 ---- */
+    unit('proposition', '命题', 'logic', 'axiom', 4, null, {
+      text: '逻辑学的原子。一个命题非真即假。'
+    }),
+    unit('predicate', '谓词', 'logic', 'reasoning', 4, 'corroborate', {
+      text: '共证：同排每有一张其他友方单位，+2 论证力。'
+    }),
+    unit('relation', '关系', 'logic', 'reasoning', 5, null, {
+      text: '两个对象之间可以成立或不成立的东西。'
+    }),
+    unit('mapping', '映射', 'logic', 'reasoning', 5, 'deduce', {
+      text: '推论：若上一张牌是逻辑单位，+4 论证力。'
+    }),
+    unit('formal-language', '形式语言', 'logic', 'axiom', 4, null, {
+      text: '把自然语言压缩成符号，再把符号变成证明。'
+    }),
+    unit('proof-tree', '证明树', 'logic', 'theorem', 6, 'corroborate', {
+      text: '共证：同排每有一张其他友方单位，+2 论证力。'
+    }),
+    unit('model', '模型', 'logic', 'theorem', 6, 'deduce', {
+      text: '推论：若上一张牌是逻辑单位，+4 论证力。'
+    }),
+    unit('cardinal', '基数', 'logic', 'theorem', 5, 'corroborate', {
+      text: '共证：同排每有一张其他友方单位，+2 论证力。'
+    }),
+    unit('ordinal', '序数', 'logic', 'axiom', 5, null, {
+      text: '不仅问“多少”，还问“排在第几”。'
+    }),
+
+    /* ---- 逻辑与集合：数学家 ×10 ---- */
+    unit('cantor', '康托尔', 'logic', 'theorem', 7, 'corroborate', {
+      text: '共证：同排每有一张其他友方单位，+2 论证力。'
+    }),
+    unit('russell-adv', '罗素', 'logic', 'reasoning', 7, 'deduce', {
+      text: '推论：若上一张牌是逻辑单位，+4 论证力。'
+    }),
+    unit('hilbert', '希尔伯特', 'logic', 'axiom', 7, 'deduce', {
+      text: '推论：若上一张牌是逻辑单位，+4 论证力。'
+    }),
+    unit('frege', '弗雷格', 'logic', 'reasoning', 6, 'corroborate', {
+      text: '共证：同排每有一张其他友方单位，+2 论证力。'
+    }),
+    unit('boole', '布尔', 'logic', 'reasoning', 7, 'deduce', {
+      text: '推论：若上一张牌是逻辑单位，+4 论证力。'
+    }),
+    unit('turing', '图灵', 'logic', 'theorem', 8, 'deduce', {
+      text: '推论：若上一张牌是逻辑单位，+4 论证力。'
+    }),
+    unit('zermelo', '策梅洛', 'logic', 'axiom', 7, 'corroborate', {
+      text: '共证：同排每有一张其他友方单位，+2 论证力。'
+    }),
+    unit('tarski', '塔斯基', 'logic', 'theorem', 7, 'corroborate', {
+      text: '共证：同排每有一张其他友方单位，+2 论证力。'
+    }),
+    unit('dedekind', '戴德金', 'logic', 'reasoning', 7, 'deduce', {
+      text: '推论：若上一张牌是逻辑单位，+4 论证力。'
+    }),
+    unit('peano', '皮亚诺', 'logic', 'axiom', 6, 'corroborate', {
+      text: '共证：同排每有一张其他友方单位，+2 论证力。'
+    }),
+
+    unit('godel', '哥德尔', 'logic', 'theorem', 8, 'deduce', {
+      text: '推论：若上一张牌是逻辑单位，+4 论证力。'
+    }),
+
+    /* ---- 逻辑与集合：巨匠 ×2 ---- */
+    unit('cantor-master', '康托尔·巨匠', 'logic', 'theorem', 10, 'master', {
+      text: '巨匠：不受悖论、反证法与撤回命题影响。'
+    }),
+    unit('godel-master', '哥德尔·巨匠', 'logic', 'theorem', 10, 'master', {
+      text: '巨匠：不受悖论、反证法与撤回命题影响。'
+    }),
+
+    /* ---- 逻辑与集合：特殊牌 ×6 ---- */
+    special('extended-counterexample', '反例扩展', 'counterexample',
+      '在对方任一排生成一张 1 点「反例」，然后抽 2 张牌。', { draw: 2 }),
+    special('logical-negation', '逻辑否定', 'negate',
+      '取消对方最近打出的一张策略牌的效果。'),
+    special('diagonal', '对角线法', 'diagonal',
+      '对方一排有至少 3 个单位时，在己方对应排生成一个 3 点「自指命题」。'),
+    special('formalization', '形式化', 'axiomatize',
+      '选择己方一个普通单位，使其本小局不受悖论影响。'),
+    special('consistency', '一致性', 'clarify',
+      '解除一排的悖论效果。'),
+    special('completeness', '完备性', 'draw',
+      '抽 2 张牌。', { draw: 2 }),
+
     /* ---- 悖论 ×4（通关 1-10 后解锁收藏） ---- */
     paradox('russell', '罗素悖论',
       { mode: 'halve', value: 0 },
@@ -172,6 +262,20 @@
   ];
 
   const TOKENS = {
+    'self-reference-token': {
+      id: 'self-reference-token',
+      name: '自指命题',
+      faction: 'logic',
+      type: 'unit',
+      row: null,
+      power: 3,
+      ability: null,
+      bondId: null,
+      maxCopies: 0,
+      collectible: false,
+      token: true,
+      text: '由「对角线法」生成。'
+    },
     'counterexample-token': {
       id: 'counterexample-token',
       name: '反例',
@@ -232,6 +336,32 @@
   Object.keys(STARTER_ENTRIES).forEach(function (id) {
     STARTER_COUNTS[id] = STARTER_ENTRIES[id];
   });
+
+  const LOGIC_STARTER_ENTRIES = {
+    'proposition': 2,
+    'predicate': 3,
+    'relation': 3,
+    'mapping': 3,
+    'formal-language': 2,
+    'proof-tree': 3,
+    'set': 3,
+    'counterexample': 2,
+    'clarify': 1,
+    'ordinal': 2,
+    'cardinal': 1
+  };
+
+  const LOGIC_STARTER_DECK = deck(LOGIC_STARTER_ENTRIES);
+
+  const FACTION_STARTER_DECKS = {
+    geometry: STARTER_DECK.slice(),
+    logic: LOGIC_STARTER_DECK.slice()
+  };
+
+  const FACTION_STARTER_COUNTS = {
+    geometry: STARTER_COUNTS,
+    logic: LOGIC_STARTER_ENTRIES
+  };
 
   const AI_DECKS = {
     '1-1': {
@@ -405,6 +535,197 @@
         'counterexample': 1,
         'citation': 1
       })
+    },
+    '2-1': {
+      name: '命题大厅',
+      deck: deck({
+        'proposition': 3,
+        'predicate': 3,
+        'relation': 3,
+        'formal-language': 3,
+        'proof-tree': 3,
+        'set': 3,
+        'cardinal': 3,
+        'ordinal': 3,
+        'counterexample': 1
+      })
+    },
+    '2-2': {
+      name: '集合阶梯',
+      deck: deck({
+        'proposition': 3,
+        'predicate': 3,
+        'relation': 3,
+        'formal-language': 3,
+        'proof-tree': 3,
+        'set': 3,
+        'cardinal': 3,
+        'ordinal': 2,
+        'cantor': 1,
+        'counterexample': 1
+      })
+    },
+    '2-3': {
+      name: '否定之门',
+      deck: deck({
+        'logical-negation': 3,
+        'counterexample': 2,
+        'set': 3,
+        'relation': 3,
+        'proposition': 3,
+        'predicate': 3,
+        'formal-language': 2,
+        'proof-tree': 2,
+        'cardinal': 1,
+        'ordinal': 1,
+        'limit': 2
+      })
+    },
+    '2-4': {
+      name: '模型室',
+      deck: deck({
+        'mapping': 3,
+        'model': 3,
+        'proposition': 2,
+        'predicate': 2,
+        'relation': 1,
+        'formal-language': 2,
+        'proof-tree': 2,
+        'set': 2,
+        'logical-negation': 2,
+        'counterexample': 2,
+        'cardinal': 1,
+        'ordinal': 1,
+        'cantor': 1,
+        'clarify': 1
+      })
+    },
+    '2-5': {
+      name: '对角线',
+      deck: deck({
+        'diagonal': 2,
+        'mapping': 2,
+        'model': 2,
+        'cantor': 2,
+        'proposition': 2,
+        'predicate': 2,
+        'relation': 2,
+        'proof-tree': 2,
+        'set': 2,
+        'counterexample': 2,
+        'logical-negation': 1,
+        'formal-language': 1,
+        'cardinal': 1,
+        'ordinal': 1,
+        'clarify': 1
+      })
+    },
+    '2-6': {
+      name: '公理系统',
+      deck: deck({
+        'formalization': 2,
+        'model': 2,
+        'mapping': 2,
+        'cantor': 2,
+        'hilbert': 1,
+        'proposition': 2,
+        'predicate': 2,
+        'proof-tree': 2,
+        'set': 2,
+        'diagonal': 2,
+        'logical-negation': 2,
+        'counterexample': 1,
+        'cardinal': 1,
+        'ordinal': 1,
+        'frege': 1
+      })
+    },
+    '2-7': {
+      name: '希尔伯特计划',
+      deck: deck({
+        'hilbert': 3,
+        'cantor': 2,
+        'turing': 1,
+        'model': 2,
+        'mapping': 2,
+        'formalization': 2,
+        'logical-negation': 2,
+        'reductio': 2,
+        'citation': 2,
+        'consistency': 1,
+        'completeness': 1,
+        'proof-tree': 2,
+        'set': 2,
+        'counterexample': 1
+      })
+    },
+    '2-8': {
+      name: '完备性',
+      deck: deck({
+        'russell-adv': 2,
+        'turing': 2,
+        'boole': 2,
+        'dedekind': 2,
+        'peano': 2,
+        'cantor': 2,
+        'hilbert': 2,
+        'frege': 1,
+        'tarski': 1,
+        'zermelo': 1,
+        'completeness': 2,
+        'consistency': 1,
+        'diagonal': 2,
+        'logical-negation': 2,
+        'model': 1
+      })
+    },
+    '2-9': {
+      name: '不完备',
+      deck: deck({
+        'godel': 2,
+        'cantor': 2,
+        'hilbert': 2,
+        'turing': 2,
+        'russell-adv': 2,
+        'boole': 1,
+        'dedekind': 1,
+        'frege': 1,
+        'zermelo': 1,
+        'tarski': 1,
+        'completeness': 2,
+        'consistency': 2,
+        'logical-negation': 2,
+        'diagonal': 2,
+        'formalization': 2
+      })
+    },
+    '2-10': {
+      name: '哥德尔·巨匠',
+      deck: deck({
+        'godel-master': 1,
+        'godel': 1,
+        'cantor-master': 1,
+        'cantor': 2,
+        'hilbert': 1,
+        'turing': 1,
+        'russell-adv': 1,
+        'boole': 2,
+        'dedekind': 1,
+        'frege': 1,
+        'zermelo': 1,
+        'tarski': 1,
+        'completeness': 1,
+        'consistency': 1,
+        'logical-negation': 1,
+        'diagonal': 1,
+        'withdraw': 1,
+        'counterexample': 1,
+        'russell': 1,
+        'citation': 1,
+        'reductio': 1,
+        'consensus': 1,
+        'formalization': 1
+      })
     }
   };
 
@@ -416,7 +737,11 @@
     clarify: 6,
     citation: 7,
     reductio: 8,
-    consensus: 9
+    consensus: 9,
+    negate: 13,
+    deduce: 14,
+    diagonal: 15,
+    axiomatize: 16
   };
 
   const STAGES = [
@@ -489,11 +814,185 @@
       tip: '留一张公理澄清，或者用巨匠顶住被诅咒的排。',
       ai: '1-10', bossRule: 'self-reference',
       reward: { fixed: ['euclid'], choice: [] }
+    },
+    {
+      id: '2-1', index: 11, name: '命题大厅', subtitle: '逻辑基础',
+      lesson: '逻辑与集合的第一课：命题、谓词、关系。它们不靠巨匠，而靠共证和连续出牌。',
+      tip: '先用稳定的基础单位铺排，再把共证牌放进同一排。',
+      ai: '2-1', bossRule: null,
+      reward: { fixed: ['proposition'], choice: [] }
+    },
+    {
+      id: '2-2', index: 12, name: '集合阶梯', subtitle: '集合与基数',
+      lesson: '康托尔把无穷分成不同大小。集合、基数、序数是逻辑阵营的骨架。',
+      tip: '逻辑牌组同样需要论证力，只是它更擅长用控制牌改变交换。',
+      ai: '2-2', bossRule: null,
+      reward: { fixed: ['cantor'], choice: [] }
+    },
+    {
+      id: '2-3', index: 13, name: '否定之门', subtitle: '否定',
+      lesson: '逻辑否定可以取消对方最近打出的一张策略牌。看清楚再否定，别浪费。',
+      tip: '否定只对策略牌有效；对方刚打出单位时不要用。',
+      ai: '2-3', bossRule: null,
+      reward: { fixed: ['logical-negation'], choice: [] }
+    },
+    {
+      id: '2-4', index: 14, name: '模型室', subtitle: '推论',
+      lesson: '推论：如果上一张牌是逻辑单位，本牌 +4。顺序本身就是论证力。',
+      tip: '先打逻辑单位，再接映射、模型或布尔。',
+      ai: '2-4', bossRule: null,
+      reward: { fixed: ['model'], choice: [] }
+    },
+    {
+      id: '2-5', index: 15, name: '对角线', subtitle: '对角线法',
+      lesson: '对方一排有至少 3 个单位时，对角线法会在己方对应排生成 3 点「自指命题」。',
+      tip: '对手铺得越整齐，对角线法越赚。',
+      ai: '2-5', bossRule: null,
+      reward: { fixed: ['diagonal'], choice: [] }
+    },
+    {
+      id: '2-6', index: 16, name: '公理系统', subtitle: '公理化',
+      lesson: '形式化让一个普通单位本小局不受悖论影响。把关键单位从天气里保下来。',
+      tip: '巨匠本来就免疫；形式化是给普通单位的局部保护。',
+      ai: '2-6', bossRule: null,
+      reward: { fixed: ['formalization'], choice: [] }
+    },
+    {
+      id: '2-7', index: 17, name: '希尔伯特计划', subtitle: '控制与卡差',
+      lesson: '希尔伯特想把所有数学形式化。这里开始，控制牌与卡差比单纯堆点更重要。',
+      tip: '反证法、引证、否定、对角线可以交替使用。',
+      ai: '2-7', bossRule: null,
+      reward: { fixed: ['hilbert'], choice: [] }
+    },
+    {
+      id: '2-8', index: 18, name: '完备性', subtitle: '综合逻辑',
+      lesson: '完备性说：真命题都能被证明。但证明需要构筑，不是把强牌都塞进去。',
+      tip: '三选一里有康托尔·巨匠，也有罗素与图灵。',
+      ai: '2-8', bossRule: null,
+      reward: { fixed: [], choice: ['cantor-master', 'russell-adv', 'turing'] }
+    },
+    {
+      id: '2-9', index: 19, name: '不完备', subtitle: '哥德尔',
+      lesson: '哥德尔证明：任何足够强的形式系统里，都存在无法在系统内证明的真命题。',
+      tip: '这一关的 AI 已经会连续追分与控制；别把第一局打空。',
+      ai: '2-9', bossRule: null,
+      reward: { fixed: ['godel'], choice: [] }
+    },
+    {
+      id: '2-10', index: 20, name: '不完备性定理', subtitle: 'Boss · 形式之塔',
+      lesson: 'Boss 能力「不完备」：第 2、3 小局开始时，随机一排自动被不完备性危机笼罩（-3）。',
+      tip: '公理澄清、形式化与巨匠都能对抗它。',
+      ai: '2-10', bossRule: 'incompleteness',
+      reward: { fixed: ['godel-master'], choice: [] }
     }
   ];
 
+  /* 章节与关卡元数据 */
+  STAGES.forEach(function (stage) {
+    stage.chapter = Number(stage.id.split('-')[0]);
+    const isBoss = stage.id === '1-10' || stage.id === '2-10';
+    stage.boss = isBoss;
+    stage.goldFirst = stage.chapter === 1
+      ? (isBoss ? 100 : 40)
+      : (isBoss ? 150 : 60);
+    stage.goldRepeat = isBoss ? 30 : 15;
+  });
+
+  const CHAPTERS = [
+    { id: 1, name: '悖论裂缝', subtitle: '第一章 · 几何学派', stages: STAGES.filter(function (s) { return s.chapter === 1; }).map(function (s) { return s.id; }) },
+    { id: 2, name: '形式之塔', subtitle: '第二章 · 逻辑与集合', stages: STAGES.filter(function (s) { return s.chapter === 2; }).map(function (s) { return s.id; }) }
+  ];
+
+  const AI_PROFILES = {
+    '1-1': { aggression: 0.3, conserve: 0.45, bluff: 0.05, comboBias: 0.4, controlBias: 0.1 },
+    '1-2': { aggression: 0.25, conserve: 0.85, bluff: 0.1, comboBias: 0.4, controlBias: 0.2 },
+    '1-3': { aggression: 0.45, conserve: 0.5, bluff: 0.1, comboBias: 0.9, controlBias: 0.2 },
+    '1-4': { aggression: 0.4, conserve: 0.7, bluff: 0.15, comboBias: 0.6, controlBias: 0.4 },
+    '1-5': { aggression: 0.5, conserve: 0.55, bluff: 0.2, comboBias: 0.6, controlBias: 0.6 },
+    '1-6': { aggression: 0.5, conserve: 0.65, bluff: 0.15, comboBias: 0.5, controlBias: 0.8 },
+    '1-7': { aggression: 0.45, conserve: 0.6, bluff: 0.2, comboBias: 0.7, controlBias: 0.5 },
+    '1-8': { aggression: 0.7, conserve: 0.5, bluff: 0.15, comboBias: 0.7, controlBias: 0.9 },
+    '1-9': { aggression: 0.6, conserve: 0.65, bluff: 0.25, comboBias: 0.9, controlBias: 0.6 },
+    '1-10': { aggression: 0.6, conserve: 0.7, bluff: 0.2, comboBias: 0.8, controlBias: 0.9 },
+    '2-1': { aggression: 0.35, conserve: 0.5, bluff: 0.1, comboBias: 0.5, controlBias: 0.2 },
+    '2-2': { aggression: 0.45, conserve: 0.55, bluff: 0.1, comboBias: 0.8, controlBias: 0.3 },
+    '2-3': { aggression: 0.5, conserve: 0.55, bluff: 0.2, comboBias: 0.6, controlBias: 0.7 },
+    '2-4': { aggression: 0.5, conserve: 0.6, bluff: 0.15, comboBias: 0.9, controlBias: 0.4 },
+    '2-5': { aggression: 0.55, conserve: 0.6, bluff: 0.2, comboBias: 0.8, controlBias: 0.7 },
+    '2-6': { aggression: 0.55, conserve: 0.65, bluff: 0.2, comboBias: 0.7, controlBias: 0.8 },
+    '2-7': { aggression: 0.6, conserve: 0.7, bluff: 0.25, comboBias: 0.7, controlBias: 0.9 },
+    '2-8': { aggression: 0.65, conserve: 0.7, bluff: 0.3, comboBias: 0.9, controlBias: 0.8 },
+    '2-9': { aggression: 0.75, conserve: 0.75, bluff: 0.3, comboBias: 0.9, controlBias: 0.9 },
+    '2-10': { aggression: 0.7, conserve: 0.8, bluff: 0.35, comboBias: 0.9, controlBias: 1.0 }
+  };
+
   const STAGE_MAP = {};
   STAGES.forEach(function (s) { STAGE_MAP[s.id] = s; });
+
+  /* 商店价格与卡牌来源 */
+  const SHOP_TIERS = {
+    basic: 35,
+    advanced: 60,
+    special: 80,
+    master: 0
+  };
+
+  CARDS.forEach(function (card) {
+    card.chapter = 1;
+    if (card.type === 'paradox') card.shopTier = 'master';
+    else if (card.ability === 'master') card.shopTier = 'master';
+    else if (card.type === 'special') card.shopTier = 'special';
+    else if ((card.power || 0) >= 7) card.shopTier = 'advanced';
+    else card.shopTier = 'basic';
+    card.shop = card.collectible && card.shopTier !== 'master';
+    card.price = card.price != null ? card.price : SHOP_TIERS[card.shopTier];
+    card.sources = [];
+  });
+
+  function addSource(card, source) {
+    const exists = card.sources.some(function (s) {
+      return s.type === source.type && s.stage === source.stage && s.faction === source.faction;
+    });
+    if (!exists) card.sources.push(source);
+  }
+
+  ['geometry', 'logic'].forEach(function (faction) {
+    (FACTION_STARTER_DECKS[faction] || []).forEach(function (id) {
+      addSource(CARD_MAP[id], { type: 'starter', faction: faction });
+    });
+  });
+
+  STAGES.forEach(function (stage) {
+    const reward = stage.reward || {};
+    (reward.fixed || []).concat(reward.choice || []).forEach(function (id) {
+      addSource(CARD_MAP[id], {
+        type: stage.boss ? 'boss' : 'stage',
+        stage: stage.id,
+        chapter: stage.chapter
+      });
+    });
+  });
+
+  ['russell', 'zeno', 'incompleteness', 'liar'].forEach(function (id) {
+    addSource(CARD_MAP[id], { type: 'boss', stage: '1-10', chapter: 1 });
+  });
+
+  const PHASE2_IDS = CARDS.filter(function (card) {
+    return (card.faction === 'logic' && card.type !== 'paradox') ||
+      ['extended-counterexample', 'logical-negation', 'diagonal', 'formalization', 'consistency', 'completeness'].indexOf(card.id) !== -1;
+  }).map(function (card) { return card.id; });
+  PHASE2_IDS.forEach(function (id) { CARD_MAP[id].chapter = 2; });
+
+  /* 首通固定/三选一/悖论解锁属于明确挑战奖励，不进入普通商店随机池。 */
+  CARDS.forEach(function (card) {
+    if (card.sources.some(function (s) { return s.type === 'stage' || s.type === 'boss'; })) {
+      card.shop = false;
+    }
+  });
+
+  CARDS.forEach(function (card) {
+    if (card.shop) addSource(card, { type: 'shop' });
+  });
 
   return {
     VERSION: VERSION,
@@ -508,9 +1007,16 @@
     maxCopies: maxCopies,
     STARTER_DECK: STARTER_DECK,
     STARTER_COUNTS: STARTER_COUNTS,
+    LOGIC_STARTER_DECK: LOGIC_STARTER_DECK,
+    LOGIC_STARTER_ENTRIES: LOGIC_STARTER_ENTRIES,
+    FACTION_STARTER_DECKS: FACTION_STARTER_DECKS,
+    FACTION_STARTER_COUNTS: FACTION_STARTER_COUNTS,
     AI_DECKS: AI_DECKS,
+    AI_PROFILES: AI_PROFILES,
     STAGES: STAGES,
     STAGE_MAP: STAGE_MAP,
+    CHAPTERS: CHAPTERS,
+    SHOP_TIERS: SHOP_TIERS,
     MECHANIC_INTRO_STAGE: MECHANIC_INTRO_STAGE
   };
 });

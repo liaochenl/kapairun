@@ -128,7 +128,7 @@ async function main() {
   }
 
   async function appState() {
-    return evalJs('JSON.stringify((function(){var a=TA_UI.app,m=a.match;return {screen:a.screen,modal:a.modal&&a.modal.type,phase:m&&m.phase,current:m&&m.current,round:m&&m.round,cleared:a.profile.clearedStages,collection:a.profile.collection,deckLen:a.profile.deck.length,deckHasPyth:a.profile.deck.indexOf("pythagoras")!==-1,hand:m&&m.player.hand.length,aiHand:m&&m.ai.hand.length,seals:m&&{p:m.player.seals,a:m.ai.seals},board:m&&{p:TA_BATTLE.calculateTotalScore(m,"player"),a:TA_BATTLE.calculateTotalScore(m,"ai")}};})())');
+    return evalJs('JSON.stringify((function(){var a=TA_UI.app,m=a.match,d=TA_META.activeDeck(a.profile);return {screen:a.screen,modal:a.modal&&a.modal.type,phase:m&&m.phase,current:m&&m.current,round:m&&m.round,cleared:a.profile.clearedStages,collection:a.profile.collection,deckLen:d.cards.length,deckHasPyth:d.cards.indexOf("pythagoras")!==-1,hand:m&&m.player.hand.length,aiHand:m&&m.ai.hand.length,seals:m&&{p:m.player.seals,a:m.ai.seals},board:m&&{p:TA_BATTLE.calculateTotalScore(m,"player"),a:TA_BATTLE.calculateTotalScore(m,"ai")}};})())');
   }
 
   async function waitForPlayerTurn(maxMs) {
@@ -258,19 +258,19 @@ async function main() {
   /* 卡组编辑：移除一张，把毕达哥拉斯加入 */
   await click('[data-action="nav-deck"]');
   await wait(350);
-  console.log('deck before:', await evalJs('JSON.stringify({len:TA_UI.app.profile.deck.length,valid:TA_META.validateDeck(TA_UI.app.profile).ok})'));
+  console.log('deck before:', await evalJs('JSON.stringify({len:TA_META.activeDeck(TA_UI.app.profile).cards.length,valid:TA_META.validateDeck(TA_UI.app.profile).ok})'));
   await click('[data-action="deck-remove"]');
   await wait(200);
-  console.log('deck after remove:', await evalJs('TA_UI.app.profile.deck.length'));
+  console.log('deck after remove:', await evalJs('TA_META.activeDeck(TA_UI.app.profile).cards.length'));
   await click('[data-action="deck-add"][data-id="pythagoras"]');
   await wait(250);
-  console.log('deck after add:', await evalJs('JSON.stringify({len:TA_UI.app.profile.deck.length,has:TA_UI.app.profile.deck.indexOf("pythagoras")!==-1,valid:TA_META.validateDeck(TA_UI.app.profile).ok})'));
+  console.log('deck after add:', await evalJs('JSON.stringify({len:TA_META.activeDeck(TA_UI.app.profile).cards.length,has:TA_META.activeDeck(TA_UI.app.profile).cards.indexOf("pythagoras")!==-1,valid:TA_META.validateDeck(TA_UI.app.profile).ok})'));
   await shot('deck');
 
   /* 刷新后 V2 存档 */
   await evalJs('location.reload()');
   await wait(1200);
-  const reloaded = await evalJs('JSON.stringify({cleared:TA_UI.app.profile.clearedStages["1-1"]===true,pythagoras:TA_UI.app.profile.collection.pythagoras,deckLen:TA_UI.app.profile.deck.length,inDeck:TA_UI.app.profile.deck.indexOf("pythagoras")!==-1,key:!!localStorage.getItem("truth_academy_save_v2"),v1:!!localStorage.getItem("truth_academy_save_v1")})');
+  const reloaded = await evalJs('JSON.stringify({cleared:TA_UI.app.profile.clearedStages["1-1"]===true,pythagoras:TA_UI.app.profile.collection.pythagoras,deckLen:TA_META.activeDeck(TA_UI.app.profile).cards.length,inDeck:TA_META.activeDeck(TA_UI.app.profile).cards.indexOf("pythagoras")!==-1,key:!!localStorage.getItem("truth_academy_save_v2"),v1:!!localStorage.getItem("truth_academy_save_v1")})');
   console.log('after reload:', reloaded);
   await click('[data-action="nav-stages"]');
   await wait(300);
@@ -279,13 +279,49 @@ async function main() {
   /* 图鉴 */
   await click('[data-action="nav-codex"]');
   await wait(350);
-  console.log('codex:', await evalJs('JSON.stringify({cards:document.querySelectorAll(".codex-card").length,locked:document.querySelectorAll(".codex-card.locked").length})'));
+  console.log('codex:', await evalJs('JSON.stringify({cards:document.querySelectorAll(".codex-card").length,unknown:document.querySelectorAll(".codex-card.unknown").length,revealed:document.querySelectorAll(".codex-card.revealed").length,owned:document.querySelectorAll(".codex-card.owned").length})'));
   await shot('codex');
+  await evalJs("document.querySelector('.codex-card.owned').click()");
+  await wait(250);
+  console.log('card detail:', await evalJs('JSON.stringify({modal:TA_UI.app.modal&&TA_UI.app.modal.type,detail:!!document.querySelector(".card-detail-head"),text:document.querySelector(".card-detail-head")&&document.querySelector(".card-detail-head").innerText.slice(0,30)})'));
+  await shot('card-detail');
+  await click('[data-action="modal-close"]');
+  await wait(200);
+
+  /* 商店：购买 + 刷新 */
+  await evalJs("TA_UI.go('shop')");
+  await wait(350);
+  console.log('shop:', await evalJs('JSON.stringify({slots:document.querySelectorAll(".shop-slot").length,gold:TA_UI.app.profile.gold,inventory:TA_UI.app.profile.shop.inventory.length})'));
+  await shot('shop');
+  const shopBefore = await evalJs('JSON.stringify({gold:TA_UI.app.profile.gold,owned:Object.keys(TA_UI.app.profile.collection).length})');
+  await click('[data-action="shop-buy"]');
+  await wait(350);
+  console.log('shop buy:', shopBefore, '->', await evalJs('JSON.stringify({gold:TA_UI.app.profile.gold,sold:TA_UI.app.profile.shop.inventory.filter(function(s){return s.sold;}).length})'));
+  const goldBeforeRefresh = await evalJs('TA_UI.app.profile.gold');
+  await click('[data-action="shop-refresh"]');
+  await wait(350);
+  console.log('shop refresh:', goldBeforeRefresh, '->', await evalJs('TA_UI.app.profile.gold'), 'count', await evalJs('TA_UI.app.profile.shop.refreshCount'));
+  await shot('shop-after');
+
+  /* 多牌组：新建、切换 */
+  await evalJs("TA_UI.go('deck')");
+  await wait(300);
+  await click('[data-action="new-deck"]');
+  await wait(200);
+  console.log('new deck modal:', await evalJs('!!document.querySelector("[data-action=create-deck]")'));
+  await click('[data-action="create-deck"]');
+  await wait(300);
+  console.log('decks:', await evalJs('JSON.stringify({count:TA_UI.app.profile.decks.length,active:TA_META.activeDeck(TA_UI.app.profile).id})'));
+  const firstDeck = await evalJs('TA_UI.app.profile.decks[0].id');
+  await click('[data-action="switch-deck"][data-id="' + firstDeck + '"]');
+  await wait(250);
+  console.log('switched:', await evalJs('TA_META.activeDeck(TA_UI.app.profile).id'));
+  await shot('deck-multi');
 
   /* 试玩记录 */
   await evalJs("TA_UI.go('playtest')");
   await wait(350);
-  console.log('playtest:', await evalJs('JSON.stringify((function(){var rs=TA_PLAYTEST.load();var s=TA_PLAYTEST.summary(rs,TA_UI.app.profile.deck);var r=rs[rs.length-1];return {records:rs.length,stage:r&&r.stageId,result:r&&r.result,rounds:r&&r.rounds,r1cards:r&&r.roundStats[0]&&r.roundStats[0].cards,passCards:r&&r.roundStats[0]&&r.roundStats[0].passCards,changed:s.changed===1,games:s.games,winRate:s.winRate,text:document.querySelector(".playtest").innerText.slice(0,80)};})())'));
+  console.log('playtest:', await evalJs('JSON.stringify((function(){var rs=TA_PLAYTEST.load();var s=TA_PLAYTEST.summary(rs,TA_META.activeDeck(TA_UI.app.profile).cards);var r=rs[rs.length-1];return {records:rs.length,stage:r&&r.stageId,result:r&&r.result,rounds:r&&r.rounds,r1cards:r&&r.roundStats[0]&&r.roundStats[0].cards,passCards:r&&r.roundStats[0]&&r.roundStats[0].passCards,changed:s.changed===1,games:s.games,winRate:s.winRate,text:document.querySelector(".playtest").innerText.slice(0,80)};})())'));
   await shot('playtest');
   await evalJs("TA_UI.go('home')");
   await wait(250);
@@ -296,6 +332,28 @@ async function main() {
   console.log('reward choices:', await evalJs('document.querySelectorAll("[data-action=reward-pick]").length'));
   await shot('reward');
   await evalJs('TA_UI.app.modal=null; TA_UI.render();');
+
+  /* 第一章完成 → 第二章解锁、逻辑套牌 */
+  await evalJs('["1-2","1-3","1-4","1-5","1-6","1-7","1-8","1-9","1-10"].forEach(function(id){TA_META.completeStage(TA_UI.app.profile,id);}); TA_META.saveProfile(TA_UI.app.profile); TA_UI.go("stages");');
+  await wait(400);
+  console.log('chapter2:', await evalJs('JSON.stringify((function(){var p=TA_UI.app.profile;var logic=p.decks.find(function(d){return d.faction==="logic";});return {logic:p.unlockedFactions.logic,ch2:p.unlockedChapters[2],unlocked21:TA_META.isStageUnlocked(p,"2-1"),decks:p.decks.length,logicDeck:logic&&logic.cards.length,logicValid:logic&&TA_META.validateDeck(p,logic).ok,gold:p.gold};})())'));
+  await shot('stages-ch2');
+
+  await evalJs('(function(){var p=TA_UI.app.profile;var logic=p.decks.find(function(d){return d.faction==="logic";});TA_META.setActiveDeck(p,logic.id);TA_META.saveProfile(p);TA_UI.go("deck");})()');
+  await wait(350);
+  console.log('logic deck screen:', await evalJs('JSON.stringify({len:TA_META.activeDeck(TA_UI.app.profile).cards.length,valid:TA_META.validateDeck(TA_UI.app.profile).ok})'));
+  await shot('deck-logic');
+
+  await evalJs('TA_UI.beginBattle("2-1")');
+  await wait(300);
+  await evalJs('TA_UI.app.aiDelay=40');
+  await click('[data-action="mulligan-confirm"]');
+  await wait(300);
+  await waitForPlayerTurn(2500);
+  console.log('2-1 battle:', await evalJs('JSON.stringify({stage:TA_UI.app.stage.id,deckFaction:TA_META.activeDeck(TA_UI.app.profile).faction,current:TA_UI.app.match.current,hand:TA_UI.app.match.player.hand.length})'));
+  await shot('battle-ch2');
+  await evalJs('TA_UI.quitBattle()');
+  await wait(250);
 
   /* 移动端布局检查 */
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });

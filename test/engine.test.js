@@ -311,18 +311,28 @@ test('学术共识为场上单位提供持续到小局结束的增益', function
 
 test('初始牌组恰好 25 张且合法', function () {
   const profile = META.defaultProfile();
-  assert.strictEqual(profile.deck.length, 25);
-  const check = META.validateDeck(profile);
+  const deck = META.activeDeck(profile);
+  assert.strictEqual(deck.cards.length, 25);
+  assert.strictEqual(deck.faction, 'geometry');
+  const check = META.validateDeck(profile, deck);
   assert.strictEqual(check.ok, true, check.errors.join('；'));
-  assert.strictEqual(new Set(profile.deck).size, 11);
+  assert.strictEqual(new Set(deck.cards).size, 11);
   ['counterexample', 'withdraw', 'clarify'].forEach(function (id) {
-    assert.strictEqual(profile.deck.indexOf(id), -1);
+    assert.strictEqual(deck.cards.indexOf(id), -1);
   });
 });
 
-test('按当前奖励表可以收齐全部 30 种卡', function () {
+test('所有 collectible 卡都至少存在一种获取来源', function () {
+  const noSource = DATA.CARDS.filter(function (c) {
+    return c.collectible && (!c.sources || !c.sources.length);
+  }).map(function (c) { return c.id; });
+  assert.deepStrictEqual(noSource, []);
+});
+
+test('完成全部奖励与逻辑解锁后，非商店卡都能收齐', function () {
   const profile = META.defaultProfile();
   DATA.STAGES.forEach(function (stage) {
+    META.completeStage(profile, stage.id);
     META.claimFixedRewards(profile, stage.id);
     META.rewardOptions(profile, stage.id).slice().forEach(function (id) {
       const res = META.claimReward(profile, stage.id, id);
@@ -331,7 +341,8 @@ test('按当前奖励表可以收齐全部 30 种卡', function () {
   });
   META.unlockParadoxes(profile);
   const missing = DATA.CARDS.filter(function (c) {
-    return c.collectible && META.owned(profile, c.id) < 1;
+    if (!c.collectible || META.owned(profile, c.id) > 0) return false;
+    return !c.sources.some(function (s) { return s.type === 'shop'; });
   }).map(function (c) { return c.id; });
   assert.deepStrictEqual(missing, []);
 });
@@ -370,10 +381,10 @@ test('固定奖励只能发放一次，同名数量不超过上限', function ()
   assert.strictEqual(profile.collection.pythagoras, 3);
 });
 
-test('通关 1-10 解锁四种悖论，30 张卡全部可收集', function () {
+test('通关 1-10 解锁四种悖论，全部卡可收集', function () {
   const profile = META.defaultProfile();
   const collectible = DATA.CARDS.filter(function (c) { return c.collectible; });
-  assert.strictEqual(collectible.length, 30);
+  assert.strictEqual(collectible.length, 59);
   assert.strictEqual(META.owned(profile, 'russell'), 0);
   const newly = META.unlockParadoxes(profile);
   assert.deepStrictEqual(newly, ['russell', 'zeno', 'incompleteness', 'liar']);
@@ -601,9 +612,9 @@ test('1-1 到 1-10 的 AI 牌组都合法', function () {
   });
 });
 
-test('1-10 Boss 牌组包含全部主动机制', function () {
+test('2-10 Boss 牌组包含全部主动机制', function () {
   const abilities = {};
-  DATA.AI_DECKS['1-10'].deck.forEach(function (id) {
+  DATA.AI_DECKS['2-10'].deck.forEach(function (id) {
     abilities[DATA.CARD_MAP[id].ability] = true;
   });
   Object.keys(DATA.MECHANIC_INTRO_STAGE).forEach(function (ability) {

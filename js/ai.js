@@ -49,7 +49,7 @@
       ROWS.forEach(function (row) {
         state[side].board[row].forEach(function (unit) {
           const d = DATA.CARD_MAP[unit.id];
-          if (d.ability !== 'master') out.push({ unitUid: unit.uid });
+          if (d.ability !== 'master' && !d.token) out.push({ unitUid: unit.uid });
         });
       });
       return out;
@@ -60,6 +60,23 @@
     }
     if (def.ability === 'paradox') {
       return ROWS.map(function (row) { return { row: row }; });
+    }
+    if (def.ability === 'negate' || def.ability === 'draw') return [{}];
+    if (def.ability === 'diagonal') {
+      return ROWS.filter(function (row) {
+        return state[BATTLE.other(side)].board[row].length >= 3;
+      }).map(function (row) { return { row: row }; });
+    }
+    if (def.ability === 'axiomatize') {
+      const out = [];
+      ROWS.forEach(function (row) {
+        state[side].board[row].forEach(function (unit) {
+          if (unit.axiomized) return;
+          if (DATA.CARD_MAP[unit.id].ability === 'master') return;
+          out.push({ unitUid: unit.uid });
+        });
+      });
+      return out;
     }
     return [{}];
   }
@@ -172,7 +189,33 @@
     };
   }
 
-  function chooseAction(state, side) {
+  const DEFAULT_PROFILE = {
+    aggression: 0.5,
+    conserve: 0.5,
+    bluff: 0.2,
+    comboBias: 0.6,
+    controlBias: 0.3
+  };
+
+  function profileOf(profile) {
+    return Object.assign({}, DEFAULT_PROFILE, profile || {});
+  }
+
+  function comboFirst(state, side) {
+    const target = BATTLE.calculateTotalScore(state, side) + 4;
+    const future = estimateCatchup(state, side, target);
+    return future.sequence[0] || null;
+  }
+
+  function controlAction(actions) {
+    const controls = ['negate', 'reductio', 'diagonal', 'axiomatize', 'clarify'];
+    return actions.find(function (a) {
+      return controls.indexOf(a.def.ability) !== -1 && a.gain > 0;
+    }) || null;
+  }
+
+  function chooseAction(state, side, profile) {
+    const ai = profileOf(profile);
     const opp = BATTLE.other(side);
     if (state.phase !== 'play' || state.current !== side) return { type: 'pass', reason: 'not-turn' };
     const me = state[side];
@@ -192,7 +235,7 @@
     const mePlays = me.plays || 0;
 
     /* 第 2 小局、刚赢下第 1 小局且对手未动：直接 Pass，保留手牌打决胜局。 */
-    if (state.round === 2 && mePlays === 0 && state.lastWinner === 'ai' && me.seals === 2) {
+    if (state.round === 2 && mePlays === 0 && state.lastWinner === 'ai' && me.seals === 2 && ai.conserve >= 0.5) {
       return { type: 'pass', reason: 'dry-pass', value: 0 };
     }
 
@@ -212,8 +255,9 @@
       return playAction(first, 'fight-for-round');
     }
 
-    /* 第 1 小局的手牌预算：打满 4 张就收手，避免把整手牌倒在第一局。 */
-    if (state.round === 1 && me.seals === 2 && mePlays >= 4) {
+    /* 第 1 小局的手牌预算：由 aggression / conserve 调整，避免把整手牌倒在第一局。 */
+    const budget = Math.max(2, Math.min(7, Math.round(4 + (ai.aggression - 0.5) * 3 - (ai.conserve - 0.5) * 3 + ai.bluff * 2)));
+    if (state.round === 1 && me.seals === 2 && mePlays >= budget) {
       return { type: 'pass', reason: 'round-budget', value: 0 };
     }
 
@@ -223,6 +267,12 @@
       const threat = estimateCatchup(state, opp, myScore);
       if (!threat.catchable) {
         return { type: 'pass', reason: 'lead-unreachable', value: 0 };
+      }
+      const control = ai.controlBias >= 0.65 ? controlAction(actions) : null;
+      if (control) return playAction(control, 'press-lead-control');
+      if (ai.comboBias >= 0.7) {
+        const first = comboFirst(state, side);
+        if (first) return playAction(first, 'press-lead-combo');
       }
       return playAction(best, 'press-lead');
     }
@@ -236,6 +286,10 @@
       return playAction(first, 'catch-up');
     }
 
+    if (ai.comboBias >= 0.7) {
+      const first = comboFirst(state, side);
+      if (first) return playAction(first, 'open-round-combo');
+    }
     return playAction(best, 'open-round');
   }
 
@@ -258,7 +312,11 @@
       withdraw: 2,
       reductio: 4,
       clarify: 1,
-      paradox: 3
+      paradox: 3,
+      negate: 6,
+      diagonal: 5,
+      axiomatize: 4,
+      draw: 7
     };
     return specialValues[def.ability] || 2;
   }
@@ -277,8 +335,8 @@
   }
 
   /* 让 AI 走一步。UI 直接调用。 */
-  function act(state, side) {
-    const action = chooseAction(state, side);
+  function act(state, side, profile) {
+    const action = chooseAction(state, side, profile);
     if (action.type === 'pass') {
       const res = BATTLE.pass(state, side);
       return { ok: res.ok, action: action, reason: res.reason };
